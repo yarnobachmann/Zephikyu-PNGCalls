@@ -8,6 +8,7 @@ OLD_DIR="/opt/pngcalls.previous"
 NODE_BIN="/usr/local/lib/nodejs/bin/node"
 NPM_CLI="/usr/local/lib/nodejs/lib/node_modules/npm/bin/npm-cli.js"
 NPX_CLI="/usr/local/lib/nodejs/lib/node_modules/npm/bin/npx-cli.js"
+export PATH="/usr/local/lib/nodejs/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 [[ "${EUID}" -eq 0 ]] || { echo "Run as root inside the PNGCalls LXC." >&2; exit 1; }
 [[ -f /etc/systemd/system/pngcalls.service ]] || { echo "No native PNGCalls installation was found." >&2; exit 1; }

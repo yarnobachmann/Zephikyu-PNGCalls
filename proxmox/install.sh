@@ -34,6 +34,7 @@ ln -sfn /usr/local/lib/nodejs/bin/npx /usr/local/bin/npx
 NODE_BIN="/usr/local/lib/nodejs/bin/node"
 NPM_CLI="/usr/local/lib/nodejs/lib/node_modules/npm/bin/npm-cli.js"
 NPX_CLI="/usr/local/lib/nodejs/lib/node_modules/npm/bin/npx-cli.js"
+export PATH="/usr/local/lib/nodejs/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 [[ -x "${NODE_BIN}" && -f "${NPM_CLI}" && -f "${NPX_CLI}" ]] || {
   echo "The Node.js installation is incomplete." >&2
   exit 1
@@ -89,6 +90,7 @@ User=pngcalls
 Group=pngcalls
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${CONFIG_DIR}/pngcalls.env
+Environment=PATH=/usr/local/lib/nodejs/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=${NODE_BIN} ${NPM_CLI} start
 Restart=on-failure
 RestartSec=5
