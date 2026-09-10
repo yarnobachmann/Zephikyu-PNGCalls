@@ -97,6 +97,13 @@ root_storage="$(pvesm status -content rootdir 2>/dev/null | awk 'NR > 1 && $3 ==
 template_storage="$(pvesm status -content vztmpl 2>/dev/null | awk 'NR > 1 && $3 == "active" {print $1; exit}')"
 ip_config="dhcp"
 gateway=""
+host_arch="$(dpkg --print-architecture)"
+
+case "${host_arch}" in
+  amd64) preferred_debian="13"; fallback_debian="12" ;;
+  arm64) preferred_debian="12"; fallback_debian="" ;;
+  *) die "Unsupported Proxmox host architecture: ${host_arch}" ;;
+esac
 
 [[ -n "${bridge}" ]] || die "No vmbr network bridge was found."
 [[ -n "${root_storage}" ]] || die "No active container storage was found."
@@ -129,11 +136,14 @@ pct status "${ctid}" >/dev/null 2>&1 && die "Container ID ${ctid} is already in 
 
 echo -e "${cyan}Downloading the Debian container template${reset}"
 pveam update >/dev/null
-template="$(pveam available --section system | awk '$2 ~ /debian-13-standard/ {print $2}' | tail -n 1)"
-if [[ -z "${template}" ]]; then
-  template="$(pveam available --section system | awk '$2 ~ /debian-12-standard/ {print $2}' | tail -n 1)"
+template="$(pveam available --section system | awk -v version="${preferred_debian}" -v arch="${host_arch}" '$2 ~ ("debian-" version "-standard.*_" arch "\\.tar\\.zst$") {print $2}' | tail -n 1)"
+if [[ -z "${template}" && -n "${fallback_debian}" ]]; then
+  template="$(pveam available --section system | awk -v version="${fallback_debian}" -v arch="${host_arch}" '$2 ~ ("debian-" version "-standard.*_" arch "\\.tar\\.zst$") {print $2}' | tail -n 1)"
 fi
-[[ -n "${template}" ]] || die "No Debian 12 or 13 template is available."
+[[ -n "${template}" ]] || die "No compatible Debian template is available for ${host_arch}."
+if [[ "${host_arch}" == "arm64" ]]; then
+  echo "ARM64 compatibility mode selected: Debian 12 with nesting enabled."
+fi
 template_path="$(pvesm path "${template_storage}:vztmpl/${template}" 2>/dev/null || true)"
 if [[ -z "${template_path}" || ! -f "${template_path}" ]]; then
   pveam download "${template_storage}" "${template}" >/dev/null
@@ -146,6 +156,7 @@ fi
 
 echo -e "${cyan}Creating container ${ctid}${reset}"
 pct create "${ctid}" "${template_storage}:vztmpl/${template}" \
+  --arch "${host_arch}" \
   --hostname "${hostname}" \
   --cores "${cores}" \
   --memory "${ram}" \

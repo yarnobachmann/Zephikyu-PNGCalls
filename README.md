@@ -22,7 +22,7 @@ Paste this command into the root shell of your Proxmox VE host:
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/yarnobachmann/Zephikyu-PNGCalls/main/proxmox/zephikyu-pngcalls.sh)"
 ```
 
-Choose **Default setup** for a 1 CPU, 1 GB RAM, 8 GB Debian LXC with DHCP. Choose **Advanced setup** to select the container ID, hostname, CPU, RAM, disk, storage, network bridge, and static or DHCP networking.
+Choose **Default setup** for a 1 CPU, 1 GB RAM, 8 GB Debian LXC with DHCP. Choose **Advanced setup** to select the container ID, hostname, CPU, RAM, disk, storage, network bridge, and static or DHCP networking. AMD64 hosts use Debian 13. ARM64 hosts use Debian 12 compatibility mode because ARM Proxmox builds can have trouble starting Debian 13 systemd containers.
 
 The installer asks for an optional public domain. Providing one configures automatic HTTPS through Caddy. HTTPS is required for remote browser camera and microphone permission. The domain must already point to your public IP, and TCP ports 80 and 443 must reach the new LXC.
 
