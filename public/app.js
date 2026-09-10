@@ -587,7 +587,7 @@ function renderDashboard() {
     <main class="main">
       <header class="topbar">
         <div><div class="eyebrow">Overlay workspace</div><h1>${escapeHtml(session.name)}</h1></div>
-        <div class="actions"><button id="copy-join" class="btn ghost">Copy player link</button><button id="add-player" class="btn primary">Add manually</button></div>
+        <div class="actions"><button id="copy-join" class="btn ghost">Copy player link</button><button class="btn ghost danger" type="button" data-reset-player-link>Reset player link</button><button id="add-player" class="btn primary">Add manually</button></div>
       </header>
       <section class="view-panel ${activeView === "overlay" ? "active" : ""}" data-panel="overlay"><div class="grid">
         <section class="card">
@@ -608,6 +608,8 @@ function renderDashboard() {
             <div class="card-head"><div><h2>Player join link</h2><p class="subtle">Send this to everyone who should appear.</p></div></div>
             <div class="copy-field"><input class="input mono" value="${escapeHtml(joinUrl)}" readonly /><button id="copy-join-2" class="btn">Copy</button></div>
             <p class="hint">Players keep this page open while playing. PNG mode sends speaking status only. Webcam mode also sends camera frames to this server.</p>
+            <button class="btn ghost danger reset-link-button" type="button" data-reset-player-link>Reset player link for a new stream</button>
+            <p class="hint">This removes invited guests and makes their old link stop working. Your OBS browser-source link stays unchanged.</p>
           </section>
           <section class="card">
             <div class="card-head"><div><h2>OBS browser source</h2><p class="subtle">Keep this different link private.</p></div></div>
@@ -620,7 +622,7 @@ function renderDashboard() {
       </div></section>
       <section class="view-panel ${activeView === "players" ? "active" : ""}" data-panel="players">
         <div class="section-heading"><div><div class="eyebrow">Open invitation</div><h2>Player room</h2></div><button id="copy-join-room" class="btn primary">Copy invite link</button></div>
-        <div class="room-callout"><div><span class="room-number">${session.onlineCount}</span><span>online now</span></div><p>Guests do not create accounts. They open your private link, choose PNG or webcam mode, and grant the required browser permissions.</p><button id="reset-player-link" class="btn danger" type="button">Reset for a new stream</button></div>
+        <div class="room-callout"><div><span class="room-number">${session.onlineCount}</span><span>online now</span></div><p>Guests do not create accounts. They open your private link, choose PNG or webcam mode, and grant the required browser permissions.</p><button class="btn danger" type="button" data-reset-player-link>Reset player link for a new stream</button></div>
         <section class="card"><div class="card-head"><div><h2>Invitation link</h2><p class="subtle">Anyone with this link can join this overlay.</p></div></div><div class="copy-field"><input class="input mono" value="${escapeHtml(joinUrl)}" readonly /><button id="copy-join-room-2" class="btn">Copy</button></div></section>
         <section class="card room-list"><div class="card-head"><div><h2>Room roster</h2><p class="subtle">Connected guests appear automatically.</p></div><span class="badge">${players.length} TOTAL</span></div><div class="player-list">${players.length ? players.map((player) => `<div class="player-row"><div class="player-meta"><div class="player-name">${escapeHtml(player.name)}</div><div class="player-id">${player.source === "browser" ? "Guest browser" : "Added by host"}</div></div><div class="row-actions"><button class="icon-btn edit" data-id="${escapeHtml(player.id)}" title="Edit player">✎</button></div></div>`).join("") : `<div class="empty">No players have joined yet.</div>`}</div></section>
       </section>
@@ -651,19 +653,21 @@ function renderDashboard() {
   document.querySelector("#copy-overlay").onclick = () => navigator.clipboard.writeText(overlayUrl).then(() => toast("OBS link copied"));
   bindPlacementEditor();
   connectDashboardWebcams();
-  document.querySelector("#reset-player-link").onclick = async () => {
-    if (!confirm("Reset the player invite link and remove all invited guests? Your OBS browser source will stay the same.")) return;
-    const button = document.querySelector("#reset-player-link");
-    button.disabled = true;
-    try {
-      session = await api(`/api/sessions/${session.id}/reset-join`, { method: "POST" });
-      toast("New player link ready");
-      renderDashboard();
-    } catch (error) {
-      button.disabled = false;
-      toast(error.message);
-    }
-  };
+  document.querySelectorAll("[data-reset-player-link]").forEach((button) => {
+    button.onclick = async () => {
+      if (!confirm("Create a new player link and remove all invited guests? The old player link will stop working. Your OBS browser source will stay the same.")) return;
+      const resetButtons = [...document.querySelectorAll("[data-reset-player-link]")];
+      resetButtons.forEach((resetButton) => { resetButton.disabled = true; });
+      try {
+        session = await api(`/api/sessions/${session.id}/reset-join`, { method: "POST" });
+        toast("New player link ready. The OBS link did not change.");
+        renderDashboard();
+      } catch (error) {
+        resetButtons.forEach((resetButton) => { resetButton.disabled = false; });
+        toast(error.message);
+      }
+    };
+  });
   document.querySelector("#add-player").onclick = () => showPlayerModal();
   document.querySelectorAll(".edit").forEach((button) => button.onclick = () => showPlayerModal(players.find((player) => player.id === button.dataset.id)));
   document.querySelectorAll(".mic").forEach((button) => {

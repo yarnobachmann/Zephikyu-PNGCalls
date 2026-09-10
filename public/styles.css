@@ -109,6 +109,7 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 7px; }
 .input[type="color"]::-moz-color-swatch { border: 0; border-radius: 7px; }
 .copy-field { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.reset-link-button { width: 100%; margin-top: 14px; }
 .mono { font-family: ui-monospace, "Cascadia Mono", monospace; font-size: .75rem; }
 .hint { color: var(--muted); font-size: .875rem; line-height: 1.55; margin: 10px 0 0; }
 .divider { height: 1px; background: var(--line); margin: 2px 0; }
