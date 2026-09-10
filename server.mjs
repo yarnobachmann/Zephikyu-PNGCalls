@@ -106,7 +106,7 @@ function publicRoom(room) {
   const activeIds = new Set(active.map((player) => player.id));
   return {
     id: room.id, name: room.name, layout: room.layout, background: room.background,
-    players: room.players.filter((player) => player.pinned || activeIds.has(player.id)).map((player) => ({
+    players: room.players.filter((player) => activeIds.has(player.id) || (player.pinned && player.presence?.source !== "browser")).map((player) => ({
       id: player.id, name: player.name, idleImage: player.idleImage, talkingImage: player.talkingImage || player.idleImage, accent: player.accent,
       mediaMode: player.mediaMode || "png",
       webcamImage: player.mediaMode === "webcam" ? `/api/webcam/${room.id}/${room.overlayToken}/${player.id}` : null,
@@ -412,6 +412,13 @@ app.post("/api/join/:sessionId/:joinToken/:playerId/images", joinLimit, guestGua
 app.post("/api/join/:sessionId/:joinToken/:playerId/heartbeat", heartbeatLimit, guestGuard, async (req, res) => {
   await prisma.presence.upsert({ where: { playerId: req.player.id }, create: { playerId: req.player.id, present: true, speaking: Boolean(req.body?.speaking), muted: Boolean(req.body?.muted), source: "browser" }, update: { present: true, speaking: Boolean(req.body?.speaking), muted: Boolean(req.body?.muted), source: "browser", lastSeen: new Date() } });
   await broadcast(req.room.id); res.json({ ok: true });
+});
+app.post("/api/join/:sessionId/:joinToken/:playerId/leave", joinLimit, guestGuard, async (req, res) => {
+  await prisma.presence.update({ where: { playerId: req.player.id }, data: { present: false, speaking: false, muted: false, lastSeen: new Date() } });
+  setCookie(res, guestCookieName(req.room.id), "", 0, cookieSecure(req), true);
+  await audit(req, "guest.leave", "success", req.room.id, "guest");
+  await broadcast(req.room.id);
+  res.status(204).end();
 });
 app.put("/api/join/:sessionId/:joinToken/:playerId/webcam-frame", webcamLimit, guestGuard, express.raw({ type: "image/jpeg", limit: "512kb" }), async (req, res) => {
   if (req.player.mediaMode !== "webcam") return res.status(409).json({ error: "This player is not using webcam mode" });

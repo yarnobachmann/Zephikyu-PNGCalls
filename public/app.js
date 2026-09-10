@@ -14,7 +14,7 @@ const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => (
 function avatarMarkup(player) {
   const isWebcam = player.mediaMode === "webcam";
   const image = isWebcam ? player.webcamImage : player.speaking ? player.talkingImage || player.idleImage : player.idleImage;
-  return `<article class="avatar ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""}" style="--accent:${escapeHtml(player.accent)}">
+  return `<article class="avatar ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)}">
     ${image ? `<img class="avatar-img ${isWebcam ? "webcam-img" : ""}" src="${escapeHtml(image)}${isWebcam ? `?v=${Date.now()}` : ""}" ${isWebcam ? `data-webcam-src="${escapeHtml(image)}"` : ""} alt="${isWebcam ? `${escapeHtml(player.name)} webcam` : ""}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}
     <div class="avatar-name">${escapeHtml(player.name)}</div>
   </article>`;
@@ -22,7 +22,15 @@ function avatarMarkup(player) {
 
 setInterval(() => {
   document.querySelectorAll("img[data-webcam-src]").forEach((image) => {
-    image.src = `${image.dataset.webcamSrc}?v=${Date.now()}`;
+    if (image.dataset.webcamLoading === "true") return;
+    image.dataset.webcamLoading = "true";
+    const nextFrame = new Image();
+    nextFrame.onload = () => {
+      if (image.isConnected) image.src = nextFrame.src;
+      delete image.dataset.webcamLoading;
+    };
+    nextFrame.onerror = () => { delete image.dataset.webcamLoading; };
+    nextFrame.src = `${image.dataset.webcamSrc}?v=${Date.now()}`;
   });
 }, 350);
 
@@ -420,13 +428,17 @@ async function startMic(id, joinToken, identity, storageKey) {
     <button id="leave-room" class="btn ghost">Forget this room</button>
   </section></main>`;
 
-  document.querySelector("#leave-room").onclick = () => {
+  let leaving = false;
+  document.querySelector("#leave-room").onclick = async () => {
+    leaving = true;
+    document.querySelector("#leave-room").disabled = true;
+    await api(`/api/join/${id}/${joinToken}/${identity.playerId}/leave`, { method: "POST" }).catch(() => {});
     localStorage.removeItem(storageKey);
     location.reload();
   };
 
   let speaking = false;
-  const heartbeat = () => api(`/api/join/${id}/${joinToken}/${identity.playerId}/heartbeat`, {
+  const heartbeat = () => leaving ? Promise.resolve() : api(`/api/join/${id}/${joinToken}/${identity.playerId}/heartbeat`, {
     method: "POST",
     body: JSON.stringify({ speaking }),
   }).catch(() => {});
@@ -510,9 +522,28 @@ async function startMic(id, joinToken, identity, storageKey) {
 async function runOverlay() {
   document.body.className = "overlay-page";
   const [, id, overlayToken] = pathParts;
+  let playerStructure = "";
   const render = (data) => {
     document.documentElement.style.background = "transparent";
-    app.innerHTML = `<main class="overlay-stage ${escapeHtml(data.layout)}">${data.players.map(avatarMarkup).join("")}</main>`;
+    const nextStructure = data.players.map((player) => [player.id, player.mediaMode, player.idleImage || "", player.talkingImage || ""].join(":")).join("|");
+    let stage = app.querySelector(".overlay-stage");
+    if (!stage || nextStructure !== playerStructure) {
+      app.innerHTML = `<main class="overlay-stage ${escapeHtml(data.layout)}">${data.players.map(avatarMarkup).join("")}</main>`;
+      playerStructure = nextStructure;
+      return;
+    }
+    stage.className = `overlay-stage ${data.layout}`;
+    [...stage.querySelectorAll(".avatar")].forEach((avatar, index) => {
+      const player = data.players[index];
+      avatar.classList.toggle("speaking", Boolean(player.speaking));
+      avatar.style.setProperty("--accent", player.accent);
+      avatar.querySelector(".avatar-name").textContent = player.name;
+      if (player.mediaMode !== "webcam") {
+        const image = player.speaking ? player.talkingImage || player.idleImage : player.idleImage;
+        const element = avatar.querySelector(".avatar-img");
+        if (element && image && element.getAttribute("src") !== image) element.src = image;
+      }
+    });
   };
   try {
     render(await api(`/api/overlay/${id}/${overlayToken}`));
