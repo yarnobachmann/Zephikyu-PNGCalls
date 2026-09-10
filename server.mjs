@@ -25,6 +25,7 @@ const app = express();
 const clients = new Map();
 const discordStates = new Map();
 const discordCompanions = new Map();
+const discordOAuthCookie = "zephikyu_discord_oauth";
 const auditSalt = crypto.randomBytes(32);
 const allowedImages = new Map([["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/gif", "gif"]]);
 const speakingAnimations = new Set(["none", "bounce", "pulse", "shake", "glow"]);
@@ -401,6 +402,7 @@ app.get("/auth/discord", requireHost, async (req, res) => {
   const state = token(32);
   const callback = discordCallbackUrl();
   discordStates.set(hash(state), { hostSessionId: req.hostContext.authSession.id, expiresAt: Date.now() + 10 * 60 * 1000, config, callback });
+  setCookie(res, discordOAuthCookie, state, 10 * 60, cookieSecure(req), true, "Lax");
   const authorize = new URL("https://discord.com/oauth2/authorize");
   authorize.search = new URLSearchParams({ client_id: config.clientId, response_type: "code", redirect_uri: callback, scope: "identify rpc rpc.voice.read", state, prompt: "consent" }).toString();
   res.redirect(authorize.toString());
@@ -408,10 +410,16 @@ app.get("/auth/discord", requireHost, async (req, res) => {
 
 app.get("/auth/discord/callback", async (req, res) => {
   const context = await getHostContext(req);
-  const stateKey = hash(String(req.query.state || ""));
+  const returnedState = String(req.query.state || "");
+  const stateKey = hash(returnedState);
   const pending = discordStates.get(stateKey);
   discordStates.delete(stateKey);
-  if (!context || !pending || pending.expiresAt < Date.now() || pending.hostSessionId !== context.authSession.id || !req.query.code) {
+  const oauthCookie = parseCookies(req)[discordOAuthCookie] || "";
+  setCookie(res, discordOAuthCookie, "", 0, cookieSecure(req), true, "Lax");
+  const sameBrowser = returnedState && oauthCookie && safeEqual(returnedState, oauthCookie);
+  const sameHostSession = context && pending && pending.hostSessionId === context.authSession.id;
+  if (!pending || pending.expiresAt < Date.now() || (!sameBrowser && !sameHostSession) || !req.query.code) {
+    console.warn("Discord OAuth verification failed", { pending: Boolean(pending), sameBrowser: Boolean(sameBrowser), sameHostSession: Boolean(sameHostSession), code: Boolean(req.query.code) });
     return res.status(400).send("Discord connection could not be verified. Return to PNGCalls and try again.");
   }
   const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {

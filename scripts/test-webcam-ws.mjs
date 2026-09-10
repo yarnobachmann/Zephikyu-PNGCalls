@@ -67,6 +67,14 @@ try {
   assert.equal(discordStatus.source, "settings");
   assert.equal(JSON.stringify(discordStatus).includes(discordSecret), false);
   assert.equal(existsSync(path.join(testRoot, "data", ".credentials-key")), true);
+  const oauthStart = await fetch(`${baseUrl}/auth/discord`, { headers: { Cookie: hostCookies }, redirect: "manual" });
+  assert.equal(oauthStart.status, 302);
+  const oauthLocation = new URL(oauthStart.headers.get("location"));
+  const oauthState = oauthLocation.searchParams.get("state");
+  const oauthCookie = oauthStart.headers.getSetCookie().find((cookie) => cookie.startsWith("zephikyu_discord_oauth="));
+  assert.match(oauthCookie, /HttpOnly/);
+  assert.match(oauthCookie, /SameSite=Lax/);
+  assert.equal(decodeURIComponent(oauthCookie.split(";", 1)[0].split("=", 2)[1]), oauthState);
   const database = new DatabaseSync(path.join(testRoot, "data", "zephikyu.db"), { readOnly: true });
   const storedConfig = database.prepare('SELECT "clientSecretEncrypted" FROM "DiscordOAuthConfig" WHERE "id" = 1').get();
   database.close();
