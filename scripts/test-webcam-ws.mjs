@@ -97,6 +97,22 @@ try {
   const overlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
   assert.equal(overlay.players[0].nameFont, "typewriter");
 
+  const placementResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/placements`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
+    body: JSON.stringify({ players: [{ id: participant.playerId, x: 21, y: 64, size: 1.4, layer: 3 }] }),
+  });
+  assert.equal(placementResponse.status, 200);
+  const placedRoom = await placementResponse.json();
+  assert.equal(placedRoom.players[0].positionX, 21);
+  assert.equal(placedRoom.players[0].positionY, 64);
+  assert.equal(placedRoom.players[0].displaySize, 1.4);
+  assert.equal(placedRoom.players[0].displayLayer, 3);
+  const placedOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
+  assert.equal(placedOverlay.players[0].positionX, 21);
+  assert.equal(placedOverlay.players[0].positionY, 64);
+  assert.equal(placedOverlay.players[0].displaySize, 1.4);
+
   viewer = await openSocket(`${socketUrl}/ws/view/${room.sessionId}/${room.overlayToken}/${participant.playerId}`);
   publisher = await openSocket(`${socketUrl}/ws/publish/${room.sessionId}/${room.joinToken}/${participant.playerId}`, guestCookie);
   const received = new Promise((resolve, reject) => {
@@ -128,7 +144,7 @@ try {
   assert.equal(oldInviteResponse.status, 401);
   const unchangedOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`);
   assert.equal(unchangedOverlay.status, 200);
-  console.log("Discord settings, webcam transport, guest fonts, and invite reset passed");
+  console.log("Discord settings, webcam transport, guest fonts, placement, and invite reset passed");
 } finally {
   publisher?.terminate();
   viewer?.terminate();

@@ -30,6 +30,10 @@ const speakingAnimations = new Set(["none", "bounce", "pulse", "shake", "glow"])
 const speakingAnimation = (value) => speakingAnimations.has(value) ? value : "none";
 const nameFonts = new Set(["rounded", "comic", "typewriter", "classic", "bold"]);
 const nameFont = (value) => nameFonts.has(value) ? value : "rounded";
+const boundedNumber = (value, minimum, maximum, fallback = null) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
+};
 let credentialKeyCache;
 
 const token = (bytes = 18) => crypto.randomBytes(bytes).toString("base64url");
@@ -166,6 +170,8 @@ function publicRoom(room) {
       mediaMode: player.mediaMode || "png",
       speakingAnimation: speakingAnimation(player.speakingAnimation),
       nameFont: nameFont(player.nameFont),
+      positionX: player.positionX, positionY: player.positionY,
+      displaySize: boundedNumber(player.displaySize, 0.4, 2.5, 1), displayLayer: Math.round(boundedNumber(player.displayLayer, 0, 1000, 0)),
       webcamImage: player.mediaMode === "webcam" ? `/api/webcam/${room.id}/${room.overlayToken}/${player.id}` : null,
       speaking: Boolean(player.presence?.speaking), muted: Boolean(player.presence?.muted), source: player.presence?.source || "manual",
     })),
@@ -423,6 +429,27 @@ app.post("/api/sessions/:sessionId/reset-join", requireHost, requireCsrf, async 
   await broadcast(room.id);
   const updated = await prisma.room.findUnique({ where: { id: room.id }, include: { players: { include: { presence: true } } } });
   res.json({ ...publicRoom(updated), joinToken: nextJoinToken, overlayToken: room.overlayToken });
+});
+app.put("/api/sessions/:sessionId/placements", requireHost, requireCsrf, async (req, res) => {
+  const room = await getRoom(req, res); if (!room) return;
+  if (req.body?.reset === true) {
+    await prisma.player.updateMany({ where: { roomId: room.id }, data: { positionX: null, positionY: null, displaySize: 1, displayLayer: 0 } });
+  } else {
+    const placements = Array.isArray(req.body?.players) ? req.body.players.slice(0, 32) : [];
+    const roomPlayerIds = new Set(room.players.map((player) => player.id));
+    if (!placements.length || placements.some((entry) => !roomPlayerIds.has(cleanId(entry?.id, "")))) return res.status(400).json({ error: "Invalid player placement" });
+    await prisma.$transaction(placements.map((entry) => prisma.player.update({
+      where: { id: cleanId(entry.id) },
+      data: {
+        positionX: boundedNumber(entry.x, 0, 100, 50), positionY: boundedNumber(entry.y, 0, 100, 50),
+        displaySize: boundedNumber(entry.size, 0.4, 2.5, 1), displayLayer: Math.round(boundedNumber(entry.layer, 0, 1000, 0)),
+      },
+    })));
+  }
+  await prisma.room.update({ where: { id: room.id }, data: { updatedAt: new Date() } });
+  await audit(req, "room.update_placements", "success", room.id);
+  await broadcast(room.id);
+  res.json(await roomPayload(room.id));
 });
 app.put("/api/sessions/:sessionId/players/:playerId", requireHost, requireCsrf, async (req, res) => {
   const room = await getRoom(req, res); if (!room) return;

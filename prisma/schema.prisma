@@ -48,6 +48,10 @@ model Player {
   mediaMode         String    @default("png")
   speakingAnimation String    @default("none")
   nameFont          String    @default("rounded")
+  positionX         Float?
+  positionY         Float?
+  displaySize       Float     @default(1)
+  displayLayer      Int       @default(0)
   room              Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
   presence          Presence?
 

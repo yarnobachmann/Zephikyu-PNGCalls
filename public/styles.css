@@ -74,6 +74,18 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .font-bold, .font-bold .avatar-name { font-family: Impact, "Arial Black", sans-serif; letter-spacing: .035em; text-transform: uppercase; }
 .preview.dark { background: #040203; background-image: none; }
 .preview.checker { background-color: #100509; }
+.placement-toolbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin: 0 0 12px; }
+.placement-toolbar span { color: var(--muted); font-size: .82rem; line-height: 1.4; }
+.avatar-resize { display: none; }
+.preview.placement-editing { outline: 2px dashed #d0193c; outline-offset: 4px; }
+.preview.placement-editing .avatar { cursor: grab; touch-action: none; user-select: none; }
+.preview.placement-editing .avatar:focus { outline: 2px solid #ff637d; outline-offset: 4px; }
+.preview.placement-editing .avatar.dragging { cursor: grabbing; }
+.preview.placement-editing .avatar-resize { position: absolute; right: -12px; bottom: -12px; z-index: 20; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 2px solid #090708; border-radius: 50%; background: #d0193c; color: white; cursor: nwse-resize; font-weight: 900; }
+.preview.custom-layout, .overlay-stage.custom-layout { position: relative; display: block; }
+.preview.custom-layout .avatar, .overlay-stage.custom-layout .avatar { position: absolute; left: var(--x, 50%); top: var(--y, 50%); z-index: var(--layer, 0); margin: 0; transform: translate(-50%, -50%) scale(var(--size, 1)); transform-origin: center; }
+.preview.custom-layout .avatar.speaking, .overlay-stage.custom-layout .avatar.speaking { transform: translate(-50%, calc(-50% - 8px)) scale(calc(var(--size, 1) + .025)); }
+.preview.custom-layout .avatar { width: 190px; min-width: 0; max-width: 240px; }
 
 .player-list { display: grid; gap: 10px; }
 .player-row { border: 2px solid #090708; border-radius: 16px 11px 16px 11px; padding: 13px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; background: #1c1518; transition: transform .16s ease, background .16s ease; }
@@ -182,6 +194,10 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .overlay-stage .avatar-fallback { height: min(70vh, 500px); width: min(24vw, 260px); }
 .overlay-stage .avatar.webcam { height: auto; }
 .overlay-stage .avatar.webcam .webcam-img { height: auto; max-height: calc(94vh - 48px); }
+.overlay-stage.custom-layout .avatar { width: min(28vw, 440px); height: min(68vh, 650px); max-width: min(28vw, 440px); }
+.overlay-stage.custom-layout .avatar.webcam { height: auto; }
+.overlay-stage.custom-layout.arc .avatar:nth-child(odd) { transform: translate(-50%, -50%) scale(var(--size, 1)); }
+.overlay-stage.custom-layout.arc .avatar.speaking:nth-child(odd) { transform: translate(-50%, calc(-50% - 8px)) scale(calc(var(--size, 1) + .025)); }
 
 .toast { position: fixed; right: 24px; bottom: 24px; background: var(--ink); color: #10120e; padding: 11px 15px; border-radius: 10px; font-weight: 700; box-shadow: 0 15px 50px #0008; z-index: 20; }
 .modal { position: fixed; inset: 0; background: #000b; display: grid; place-items: center; padding: 20px; z-index: 30; }
@@ -250,6 +266,7 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
   .tutorial-helper button:hover, .tutorial-helper button:focus-visible { transform: scale(1.04); }
   .shelf-item.playing { animation: none; }
   .card, .player-row, .step, .brand-gif, .shelf-item { transition: none; }
+  .preview.custom-layout .avatar.speaking, .overlay-stage.custom-layout .avatar.speaking { transform: translate(-50%, -50%) scale(var(--size, 1)); }
 }
 
 @media (max-width: 900px) {

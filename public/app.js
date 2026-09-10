@@ -8,6 +8,8 @@ let session = null;
 let activeView = "overlay";
 let csrfToken = null;
 let discordConnection = null;
+let dashboardEvents = null;
+let placementEditing = false;
 
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
@@ -85,9 +87,15 @@ function avatarMarkup(player) {
   const image = isWebcam ? player.webcamImage : player.speaking ? player.talkingImage || player.idleImage : player.idleImage;
   const animation = ["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none";
   const font = normalizeNameFont(player.nameFont);
-  return `<article class="avatar font-${font} ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)}">
+  const positioned = player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined;
+  const x = clamp(player.positionX ?? 50, 0, 100);
+  const y = clamp(player.positionY ?? 50, 0, 100);
+  const size = clamp(player.displaySize || 1, 0.4, 2.5);
+  const layer = Math.round(clamp(player.displayLayer || 0, 0, 1000));
+  return `<article class="avatar font-${font} ${positioned ? "custom-position" : ""} ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)};--x:${x}%;--y:${y}%;--size:${size};--layer:${layer}">
     ${image ? `<img class="avatar-img ${isWebcam ? "webcam-img" : ""}" src="${escapeHtml(image)}${isWebcam ? `?v=${Date.now()}` : ""}" ${isWebcam ? `data-webcam-src="${escapeHtml(image)}"` : ""} alt="${isWebcam ? `${escapeHtml(player.name)} webcam` : ""}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}
     <div class="avatar-name">${escapeHtml(player.name)}</div>
+    <button class="avatar-resize" type="button" aria-label="Resize ${escapeHtml(player.name)}" title="Drag to resize">↘</button>
   </article>`;
 }
 
@@ -147,7 +155,7 @@ function connectWebcamStream(image, roomId, overlayToken, playerId) {
   };
   socket.onclose = () => {
     image.dataset.webcamLive = "false";
-    if (image.isConnected) setTimeout(() => connectWebcamStream(image, roomId, overlayToken, playerId), 1500);
+    if (image.isConnected) setTimeout(() => { if (image.isConnected) connectWebcamStream(image, roomId, overlayToken, playerId); }, 1500);
   };
 }
 
@@ -202,6 +210,7 @@ function tutorialSteps() {
   return [
     ["#copy-join", "Copy this invitation link and send it to every player who should appear."],
     ["#copy-overlay", "Copy this private overlay link into an OBS Browser Source."],
+    ["#edit-placement", "Arrange players lets you drag and resize everyone. The same positions appear in OBS."],
     ["[data-view='players']", "The player room shows who has joined and lets you edit each player."],
     ["[data-view='settings']", "Settings control the room name, layout, background, and optional Discord connection."],
   ];
@@ -302,6 +311,7 @@ function studioDeskMarkup() {
 }
 
 function renderAuth(needsSetup) {
+  stopDashboardLive();
   app.innerHTML = `<main class="auth-page">
     <section class="auth-crest"><img class="auth-banner" src="/assets/team-banner.png" alt="Zephikyu's favorite team" /><div class="auth-banner-copy"><div class="eyebrow">Zephikyu PNGCalls</div><h1>Enter the night.</h1><p>Your private avatar and camera room for every stream and every game.</p></div></section>
     <section class="auth-panel">
@@ -332,6 +342,7 @@ function renderAuth(needsSetup) {
 }
 
 function renderWelcome() {
+  stopDashboardLive();
   app.innerHTML = `<main class="welcome">
     <section class="welcome-copy">
       <div class="eyebrow">Zephikyu · Self-hosted · OBS ready</div>
@@ -363,7 +374,205 @@ function renderWelcome() {
   });
 }
 
+function stopDashboardLive() {
+  dashboardEvents?.close();
+  dashboardEvents = null;
+}
+
+function playerSignature(players = []) {
+  return players.map((player) => [player.id, player.mediaMode, player.idleImage || "", player.talkingImage || ""].join(":")).join("|");
+}
+
+function hasCustomPlacement(players = []) {
+  return players.some((player) => player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined);
+}
+
+function applyPlayerState(avatar, player, includePlacement = true) {
+  avatar.classList.toggle("speaking", Boolean(player.speaking));
+  avatar.classList.remove("animation-none", "animation-bounce", "animation-pulse", "animation-shake", "animation-glow");
+  avatar.classList.add(`animation-${["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none"}`);
+  avatar.classList.remove(...nameFontValues.map((font) => `font-${font}`));
+  avatar.classList.add(`font-${normalizeNameFont(player.nameFont)}`);
+  avatar.style.setProperty("--accent", player.accent);
+  avatar.querySelector(".avatar-name").textContent = player.name;
+  if (includePlacement && !avatar.classList.contains("dragging")) {
+    const positioned = player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined;
+    avatar.classList.toggle("custom-position", positioned);
+    avatar.style.setProperty("--x", `${clamp(player.positionX ?? 50, 0, 100)}%`);
+    avatar.style.setProperty("--y", `${clamp(player.positionY ?? 50, 0, 100)}%`);
+    avatar.style.setProperty("--size", clamp(player.displaySize || 1, 0.4, 2.5));
+    avatar.style.setProperty("--layer", Math.round(clamp(player.displayLayer || 0, 0, 1000)));
+  }
+  if (player.mediaMode !== "webcam") {
+    const source = player.speaking ? player.talkingImage || player.idleImage : player.idleImage;
+    const image = avatar.querySelector(".avatar-img");
+    if (image && source && image.getAttribute("src") !== source) image.src = source;
+  }
+}
+
+function connectDashboardWebcams() {
+  app.querySelectorAll(".preview img[data-webcam-src]").forEach((image) => connectWebcamStream(image, session.id, session.overlayToken, image.closest(".avatar").dataset.playerId));
+}
+
+function syncDashboardLive(data) {
+  if (!session || !document.querySelector(".shell")) return;
+  if (playerSignature(session.players) !== playerSignature(data.players)) {
+    const secrets = { joinToken: session.joinToken, overlayToken: session.overlayToken };
+    session = { ...data, ...secrets };
+    renderDashboard();
+    return;
+  }
+  session.onlineCount = data.onlineCount;
+  session.updatedAt = data.updatedAt;
+  const preview = document.querySelector("#live-preview");
+  data.players.forEach((incoming, index) => {
+    const current = session.players[index];
+    const avatar = preview?.querySelector(`.avatar[data-player-id="${CSS.escape(current.id)}"]`);
+    const draftPlacement = avatar?.classList.contains("dragging") ? {
+      positionX: current.positionX, positionY: current.positionY, displaySize: current.displaySize, displayLayer: current.displayLayer,
+    } : null;
+    Object.assign(current, incoming, draftPlacement || {});
+  });
+  preview?.classList.toggle("custom-layout", hasCustomPlacement(session.players));
+  session.players.forEach((player) => {
+    const avatar = preview?.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`);
+    if (avatar) applyPlayerState(avatar, player);
+    document.querySelector(`.mic[data-id="${CSS.escape(player.id)}"]`)?.classList.toggle("talking", Boolean(player.speaking));
+  });
+  const liveBadge = document.querySelector("#live-count-badge");
+  if (liveBadge) {
+    liveBadge.classList.toggle("live", Boolean(data.onlineCount));
+    liveBadge.textContent = data.onlineCount ? `${data.onlineCount} ONLINE` : "PREVIEW";
+  }
+  const roomNumber = document.querySelector(".room-number");
+  if (roomNumber) roomNumber.textContent = data.onlineCount;
+  const railStatus = document.querySelector("#rail-status");
+  if (railStatus) railStatus.innerHTML = `<span class="dot ${data.onlineCount ? "live" : ""}"></span>${data.onlineCount ? `${data.onlineCount} connected` : "Waiting for players"}`;
+}
+
+function startDashboardLive() {
+  if (dashboardEvents?.roomId === session.id) return;
+  stopDashboardLive();
+  dashboardEvents = new EventSource(`/api/events/${session.id}/${session.overlayToken}`);
+  dashboardEvents.roomId = session.id;
+  dashboardEvents.onmessage = (event) => syncDashboardLive(JSON.parse(event.data));
+}
+
+const placementPayload = (players) => players.map((player) => ({
+  id: player.id,
+  x: clamp(player.positionX ?? 50, 0, 100),
+  y: clamp(player.positionY ?? 50, 0, 100),
+  size: clamp(player.displaySize || 1, 0.4, 2.5),
+  layer: Math.round(clamp(player.displayLayer || 0, 0, 1000)),
+}));
+
+async function savePlacements(players) {
+  return api(`/api/sessions/${session.id}/placements`, { method: "PUT", body: JSON.stringify({ players: placementPayload(players) }) });
+}
+
+function bindPlacementEditor() {
+  const preview = document.querySelector("#live-preview");
+  const editButton = document.querySelector("#edit-placement");
+  const resetButton = document.querySelector("#reset-placement");
+  if (!preview || !editButton || !resetButton) return;
+
+  editButton.onclick = async () => {
+    if (placementEditing) {
+      placementEditing = false;
+      renderDashboard();
+      return;
+    }
+    const previewRect = preview.getBoundingClientRect();
+    session.players.forEach((player, index) => {
+      if (player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined) return;
+      const avatar = preview.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`);
+      const rect = avatar?.getBoundingClientRect();
+      player.positionX = rect ? clamp(((rect.left + rect.width / 2 - previewRect.left) / previewRect.width) * 100, 0, 100) : 50;
+      player.positionY = rect ? clamp(((rect.top + rect.height / 2 - previewRect.top) / previewRect.height) * 100, 0, 100) : 50;
+      player.displaySize = player.displaySize || 1;
+      player.displayLayer = index;
+    });
+    placementEditing = true;
+    const players = [...session.players];
+    renderDashboard();
+    try { await savePlacements(players); }
+    catch (error) { toast(error.message); }
+  };
+
+  resetButton.onclick = async () => {
+    if (!confirm("Reset every player to the selected automatic layout?")) return;
+    resetButton.disabled = true;
+    try {
+      await api(`/api/sessions/${session.id}/placements`, { method: "PUT", body: JSON.stringify({ reset: true }) });
+      session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0 }));
+      placementEditing = false;
+      renderDashboard();
+      toast("Automatic layout restored");
+    } catch (error) {
+      resetButton.disabled = false;
+      toast(error.message);
+    }
+  };
+
+  if (!placementEditing) return;
+  preview.querySelectorAll(".avatar").forEach((avatar) => {
+    const player = session.players.find((entry) => entry.id === avatar.dataset.playerId);
+    if (!player) return;
+    avatar.tabIndex = 0;
+    avatar.onpointerdown = (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const resizing = Boolean(event.target.closest(".avatar-resize"));
+      const previewRect = preview.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const initialX = clamp(player.positionX ?? 50, 0, 100);
+      const initialY = clamp(player.positionY ?? 50, 0, 100);
+      const initialSize = clamp(player.displaySize || 1, 0.4, 2.5);
+      player.displayLayer = Math.min(1000, Math.max(0, ...session.players.map((entry) => entry.displayLayer || 0)) + 1);
+      avatar.classList.add("dragging", "custom-position");
+      avatar.setPointerCapture(event.pointerId);
+      const move = (moveEvent) => {
+        if (resizing) {
+          player.displaySize = clamp(initialSize + (moveEvent.clientX - startX) / 160, 0.4, 2.5);
+        } else {
+          player.positionX = clamp(initialX + ((moveEvent.clientX - startX) / previewRect.width) * 100, 0, 100);
+          player.positionY = clamp(initialY + ((moveEvent.clientY - startY) / previewRect.height) * 100, 0, 100);
+        }
+        avatar.style.setProperty("--x", `${player.positionX}%`);
+        avatar.style.setProperty("--y", `${player.positionY}%`);
+        avatar.style.setProperty("--size", player.displaySize);
+        avatar.style.setProperty("--layer", player.displayLayer);
+      };
+      const finish = () => {
+        avatar.classList.remove("dragging");
+        avatar.onpointermove = null;
+        avatar.onpointerup = null;
+        avatar.onpointercancel = null;
+        savePlacements([player]).catch((error) => toast(error.message));
+      };
+      avatar.onpointermove = move;
+      avatar.onpointerup = finish;
+      avatar.onpointercancel = finish;
+    };
+    avatar.onkeydown = (event) => {
+      const moves = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      if (!moves[event.key]) return;
+      event.preventDefault();
+      player.positionX = clamp((player.positionX ?? 50) + moves[event.key][0], 0, 100);
+      player.positionY = clamp((player.positionY ?? 50) + moves[event.key][1], 0, 100);
+      avatar.style.setProperty("--x", `${player.positionX}%`);
+      avatar.style.setProperty("--y", `${player.positionY}%`);
+      savePlacements([player]).catch((error) => toast(error.message));
+    };
+  });
+}
+
 function renderDashboard() {
+  app.querySelectorAll("img[data-webcam-src]").forEach((image) => {
+    image.webcamSocket?.close();
+    if (image.dataset.webcamBlob) URL.revokeObjectURL(image.dataset.webcamBlob);
+  });
   const origin = location.origin;
   const overlayUrl = `${origin}/overlay/${session.id}/${session.overlayToken}`;
   const joinUrl = `${origin}/join/${session.id}/${session.joinToken}`;
@@ -373,7 +582,7 @@ function renderDashboard() {
       ${brandMarkup()}
       <nav class="nav" aria-label="Dashboard"><button class="nav-item ${activeView === "overlay" ? "active" : ""}" data-view="overlay">◫ Overlay</button><button class="nav-item ${activeView === "players" ? "active" : ""}" data-view="players">⌁ Player room</button><button class="nav-item ${activeView === "settings" ? "active" : ""}" data-view="settings">⚙ Settings</button></nav>
       ${studioShelfMarkup()}
-      <div class="rail-note"><div class="status-line"><span class="dot ${session.onlineCount ? "live" : ""}"></span>${session.onlineCount ? `${session.onlineCount} connected` : "Waiting for players"}</div>Invite links work alone. Discord is optional.</div>
+      <div class="rail-note"><div id="rail-status" class="status-line"><span class="dot ${session.onlineCount ? "live" : ""}"></span>${session.onlineCount ? `${session.onlineCount} connected` : "Waiting for players"}</div>Invite links work alone. Discord is optional.</div>
     </aside>
     <main class="main">
       <header class="topbar">
@@ -382,8 +591,9 @@ function renderDashboard() {
       </header>
       <section class="view-panel ${activeView === "overlay" ? "active" : ""}" data-panel="overlay"><div class="grid">
         <section class="card">
-          <div class="card-head"><div><h2>Live preview</h2><p class="subtle">Connected browsers can show PNGs or webcam frames.</p></div><span class="badge ${session.onlineCount ? "live" : ""}">${session.onlineCount ? `${session.onlineCount} ONLINE` : "PREVIEW"}</span></div>
-          <div class="preview ${escapeHtml(session.background)}">${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
+          <div class="card-head"><div><h2>Live preview</h2><p class="subtle">This now follows the same live feed as OBS.</p></div><span id="live-count-badge" class="badge ${session.onlineCount ? "live" : ""}">${session.onlineCount ? `${session.onlineCount} ONLINE` : "PREVIEW"}</span></div>
+          <div class="placement-toolbar"><button id="edit-placement" class="btn ${placementEditing ? "primary" : "ghost"}" type="button">${placementEditing ? "Done arranging" : "Arrange players"}</button><button id="reset-placement" class="btn ghost" type="button" ${hasCustomPlacement(players) ? "" : "hidden"}>Reset arrangement</button><span>${placementEditing ? "Drag to move and bring forward. Drag the corner handle to resize." : "Positions are shared with the OBS browser source."}</span></div>
+          <div id="live-preview" class="preview ${escapeHtml(session.background)} ${hasCustomPlacement(players) ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
           <div class="game-strip"><span>Works with</span><strong>R.E.P.O.</strong><strong>PEAK</strong><strong>Meccha Chameleon</strong><strong>Any game</strong></div>
         </section>
         <div class="stack">
@@ -439,6 +649,8 @@ function renderDashboard() {
   document.querySelector("#copy-join-room").onclick = copyJoin;
   document.querySelector("#copy-join-room-2").onclick = copyJoin;
   document.querySelector("#copy-overlay").onclick = () => navigator.clipboard.writeText(overlayUrl).then(() => toast("OBS link copied"));
+  bindPlacementEditor();
+  connectDashboardWebcams();
   document.querySelector("#reset-player-link").onclick = async () => {
     if (!confirm("Reset the player invite link and remove all invited guests? Your OBS browser source will stay the same.")) return;
     const button = document.querySelector("#reset-player-link");
@@ -557,6 +769,7 @@ async function loadDashboard() {
     session = await api(`/api/sessions/${sessionId}`);
     discordConnection = await api("/api/discord/status").catch(() => ({ configured: false, connected: null }));
     renderDashboard();
+    startDashboardLive();
   } catch {
     localStorage.removeItem("pngcalls.sessionId");
     localStorage.removeItem("relay.sessionId");
@@ -908,25 +1121,14 @@ async function runOverlay() {
     let stage = app.querySelector(".overlay-stage");
     if (!stage || nextStructure !== playerStructure) {
       app.querySelectorAll("img[data-webcam-src]").forEach((image) => { image.webcamSocket?.close(); if (image.dataset.webcamBlob) URL.revokeObjectURL(image.dataset.webcamBlob); });
-      app.innerHTML = `<main class="overlay-stage ${escapeHtml(data.layout)}">${data.players.map(avatarMarkup).join("")}</main>`;
+      app.innerHTML = `<main class="overlay-stage ${escapeHtml(data.layout)} ${hasCustomPlacement(data.players) ? "custom-layout" : ""}">${data.players.map(avatarMarkup).join("")}</main>`;
       playerStructure = nextStructure;
       stage = app.querySelector(".overlay-stage");
     }
-    stage.className = `overlay-stage ${data.layout}`;
+    stage.className = `overlay-stage ${data.layout} ${hasCustomPlacement(data.players) ? "custom-layout" : ""}`;
     [...stage.querySelectorAll(".avatar")].forEach((avatar, index) => {
       const player = data.players[index];
-      avatar.classList.toggle("speaking", Boolean(player.speaking));
-      avatar.classList.remove("animation-none", "animation-bounce", "animation-pulse", "animation-shake", "animation-glow");
-      avatar.classList.add(`animation-${["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none"}`);
-      avatar.classList.remove(...nameFontValues.map((font) => `font-${font}`));
-      avatar.classList.add(`font-${normalizeNameFont(player.nameFont)}`);
-      avatar.style.setProperty("--accent", player.accent);
-      avatar.querySelector(".avatar-name").textContent = player.name;
-      if (player.mediaMode !== "webcam") {
-        const image = player.speaking ? player.talkingImage || player.idleImage : player.idleImage;
-        const element = avatar.querySelector(".avatar-img");
-        if (element && image && element.getAttribute("src") !== image) element.src = image;
-      }
+      applyPlayerState(avatar, player);
     });
     stage.querySelectorAll("img[data-webcam-src]").forEach((image) => connectWebcamStream(image, id, overlayToken, image.closest(".avatar").dataset.playerId));
   };
