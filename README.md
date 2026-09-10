@@ -110,7 +110,9 @@ This approach is game-neutral. It cannot automatically read the roster inside a 
 
 ## Webcam mode
 
-Webcam mode captures camera frames in the guest browser, compresses them as JPEG, and sends them only to this self-hosted server. The latest frame is overwritten instead of recorded as a video. Webcam delivery targets up to 15 frames per second at 640 by 360 pixels. For full-motion video across the internet, a later WebRTC and TURN deployment would be the appropriate upgrade.
+Webcam mode captures camera frames in the guest browser, compresses them as JPEG, and sends them only to this self-hosted server. The latest frame is streamed over a persistent WebSocket instead of being recorded as a video. Players can choose 30 FPS or 60 FPS at 640 by 360 pixels. The effective frame rate still depends on the selected camera, browser, server, and network connection. If a WebSocket connection cannot be established, PNGCalls uses a lower-rate HTTP fallback so the camera remains visible.
+
+Caddy and Cloudflare Tunnel proxy the WebSocket on the same PNGCalls hostname and port. No additional public port is needed.
 
 ### OBS Virtual Camera
 

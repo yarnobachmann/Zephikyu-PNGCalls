@@ -83,6 +83,7 @@ function avatarMarkup(player) {
 
 setInterval(() => {
   document.querySelectorAll("img[data-webcam-src]").forEach((image) => {
+    if (image.dataset.webcamLive === "true") return;
     if (image.dataset.webcamLoading === "true") return;
     image.dataset.webcamLoading = "true";
     const nextFrame = new Image();
@@ -93,7 +94,52 @@ setInterval(() => {
     nextFrame.onerror = () => { delete image.dataset.webcamLoading; };
     nextFrame.src = `${image.dataset.webcamSrc}?v=${Date.now()}`;
   });
-}, 67);
+}, 500);
+
+function connectWebcamStream(image, roomId, overlayToken, playerId) {
+  if (image.webcamSocket && image.webcamSocket.readyState < 2) return;
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(`${protocol}//${location.host}/ws/view/${encodeURIComponent(roomId)}/${encodeURIComponent(overlayToken)}/${encodeURIComponent(playerId)}`);
+  socket.binaryType = "blob";
+  image.webcamSocket = socket;
+  socket.onopen = () => { image.dataset.webcamLive = "true"; };
+  const displayNewestFrame = () => {
+    const frame = image.webcamQueuedFrame;
+    if (!frame || image.webcamDecoding) return;
+    image.webcamQueuedFrame = null;
+    image.webcamDecoding = true;
+    const frameUrl = URL.createObjectURL(frame);
+    const nextFrame = new Image();
+    nextFrame.onload = () => {
+      if (!image.isConnected) {
+        URL.revokeObjectURL(frameUrl);
+        image.webcamDecoding = false;
+        socket.close();
+        return;
+      }
+      const previous = image.dataset.webcamBlob;
+      image.src = frameUrl;
+      image.dataset.webcamBlob = frameUrl;
+      if (previous) URL.revokeObjectURL(previous);
+      image.webcamDecoding = false;
+      displayNewestFrame();
+    };
+    nextFrame.onerror = () => {
+      URL.revokeObjectURL(frameUrl);
+      image.webcamDecoding = false;
+      displayNewestFrame();
+    };
+    nextFrame.src = frameUrl;
+  };
+  socket.onmessage = (event) => {
+    image.webcamQueuedFrame = event.data;
+    displayNewestFrame();
+  };
+  socket.onclose = () => {
+    image.dataset.webcamLive = "false";
+    if (image.isConnected) setTimeout(() => connectWebcamStream(image, roomId, overlayToken, playerId), 1500);
+  };
+}
 
 async function api(url, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
@@ -472,12 +518,13 @@ async function runJoin() {
           <div id="png-fields" class="two-col"><div class="field"><label>Idle image</label><input class="input" name="idle" type="file" required accept="image/png,image/jpeg,image/webp,image/gif" /></div><div class="field"><label>Talking image</label><input class="input" name="talking" type="file" required accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
           <section id="camera-fields" class="camera-picker" hidden>
             <div class="field"><label for="camera-device">Camera source</label><div class="camera-actions"><select id="camera-device" class="input" name="cameraDeviceId" disabled><option value="">Find cameras first</option></select><button id="find-cameras" class="btn ghost" type="button">Find cameras</button></div></div>
+            <div class="field"><label for="camera-fps">Frame rate</label><select id="camera-fps" class="input" name="cameraFps"><option value="30" selected>30 FPS</option><option value="60">60 FPS</option></select></div>
             <video id="camera-test-preview" autoplay muted playsinline hidden></video>
             <canvas id="crop-test-preview" class="camera-preview" width="640" height="360" hidden></canvas>
             ${cropControlsMarkup(true)}
             <p id="camera-status" class="hint">Start OBS Virtual Camera, then press Find cameras. If the default camera is busy, you can still choose another detected source.</p>
           </section>
-          <p id="webcam-note" class="hint" hidden>Your camera is sent at up to 15 frames per second. PNGCalls replaces the latest frame and does not make a video recording.</p>
+          <p id="webcam-note" class="hint" hidden>Choose 30 FPS for normal use or 60 FPS for smoother motion. PNGCalls streams the latest frame and does not make a video recording.</p>
           <div class="field"><label>Speaking accent</label><input class="input" name="accent" type="color" value="#d0193c" /><span class="hint">Used for the name outline, webcam border, and glow while speaking.</span></div>
           <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input" disabled><option value="bounce">Bounce</option><option value="pulse">Pulse</option><option value="shake">Shake</option><option value="glow">Glow</option></select></div></div>
           <button class="btn primary" type="submit">Join and enable microphone</button>
@@ -571,6 +618,7 @@ async function runJoin() {
           name: form.get("name"),
           mediaMode,
           cameraDeviceId: mediaMode === "webcam" ? form.get("cameraDeviceId") || "" : "",
+          cameraFps: mediaMode === "webcam" && form.get("cameraFps") === "60" ? 60 : 30,
           crop: mediaMode === "webcam" ? normalizeCrop({ zoom: form.get("cropZoom"), x: form.get("cropX"), y: form.get("cropY") }) : normalizeCrop(),
         };
         localStorage.setItem(storageKey, JSON.stringify(identity));
@@ -595,6 +643,7 @@ async function runJoin() {
   try {
     const resumed = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ playerId: identity.playerId }) });
     identity.mediaMode = resumed.player?.mediaMode || identity.mediaMode || "png";
+    identity.cameraFps = identity.cameraFps === 60 ? 60 : 30;
     identity.crop = normalizeCrop(identity.crop);
     localStorage.setItem(storageKey, JSON.stringify(identity));
     await startMic(id, joinToken, identity, storageKey);
@@ -612,7 +661,7 @@ async function startMic(id, joinToken, identity, storageKey) {
     <div class="eyebrow">Connected as ${escapeHtml(identity.name)}</div>
     <h1>Keep this tab open</h1>
     <p class="join-copy">${useWebcam ? "Your camera frames go to this PNGCalls server while this tab stays open." : "You can minimize this window. Only your speaking status is sent to the overlay."}</p>
-    ${useWebcam ? `<video id="camera-preview" autoplay muted playsinline hidden></video><canvas id="camera-output-preview" class="camera-preview" width="640" height="360"></canvas>${cropControlsMarkup()}` : ""}
+    ${useWebcam ? `<video id="camera-preview" autoplay muted playsinline hidden></video><canvas id="camera-output-preview" class="camera-preview" width="640" height="360"></canvas><div class="field"><label for="live-camera-fps">Frame rate</label><select id="live-camera-fps" class="input"><option value="30" ${identity.cameraFps === 60 ? "" : "selected"}>30 FPS</option><option value="60" ${identity.cameraFps === 60 ? "selected" : ""}>60 FPS</option></select></div>${cropControlsMarkup()}` : ""}
     <div class="meter"><span id="meter-bar"></span></div>
     <div class="mic-state"><span class="dot live"></span><strong id="mic-label">Listening for your voice</strong></div>
     <button id="leave-room" class="btn ghost">Forget this room</button>
@@ -635,9 +684,10 @@ async function startMic(id, joinToken, identity, storageKey) {
   heartbeat();
   setInterval(heartbeat, 500);
 
+  const requestedFps = identity.cameraFps === 60 ? 60 : 30;
   let stream;
   try {
-    const camera = { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 12, max: 15 } };
+    const camera = { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: requestedFps, max: requestedFps } };
     if (identity.cameraDeviceId) camera.deviceId = { exact: identity.cameraDeviceId };
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -650,7 +700,7 @@ async function startMic(id, joinToken, identity, storageKey) {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-          video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 12, max: 15 } },
+          video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: requestedFps, max: requestedFps } },
         });
       } catch {}
     }
@@ -679,17 +729,43 @@ async function startMic(id, joinToken, identity, storageKey) {
       requestAnimationFrame(drawPreview);
     };
     drawPreview();
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    let cameraSocket;
+    const connectPublisher = () => {
+      cameraSocket = new WebSocket(`${protocol}//${location.host}/ws/publish/${encodeURIComponent(id)}/${encodeURIComponent(joinToken)}/${encodeURIComponent(identity.playerId)}`);
+      cameraSocket.onclose = () => { if (!leaving) setTimeout(connectPublisher, 1500); };
+    };
+    connectPublisher();
     let sendingFrame = false;
-    setInterval(() => {
+    let fallbackSentAt = 0;
+    let frameTimer;
+    const captureFrame = () => {
       if (sendingFrame || video.readyState < 2) return;
       sendingFrame = true;
       canvas.toBlob(async (blob) => {
         try {
-          if (blob) await api(`/api/join/${id}/${joinToken}/${identity.playerId}/webcam-frame`, { method: "PUT", headers: { "Content-Type": "image/jpeg" }, body: blob });
+          if (blob && cameraSocket?.readyState === WebSocket.OPEN && cameraSocket.bufferedAmount < 1024 * 1024) cameraSocket.send(blob);
+          else if (blob && Date.now() - fallbackSentAt > 250) {
+            fallbackSentAt = Date.now();
+            await api(`/api/join/${id}/${joinToken}/${identity.playerId}/webcam-frame`, { method: "PUT", headers: { "Content-Type": "image/jpeg" }, body: blob });
+          }
         } catch {}
         sendingFrame = false;
-      }, "image/jpeg", 0.72);
-    }, 67);
+      }, "image/jpeg", 0.68);
+    };
+    const setFrameRate = async (fps) => {
+      clearInterval(frameTimer);
+      identity.cameraFps = fps === 60 ? 60 : 30;
+      localStorage.setItem(storageKey, JSON.stringify(identity));
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack?.applyConstraints) {
+        await videoTrack.applyConstraints({ frameRate: { ideal: identity.cameraFps, max: identity.cameraFps } }).catch(() => {});
+      }
+      frameTimer = setInterval(captureFrame, 1000 / identity.cameraFps);
+    };
+    const fpsSelect = document.querySelector("#live-camera-fps");
+    fpsSelect.onchange = () => { setFrameRate(Number(fpsSelect.value)); };
+    await setFrameRate(identity.cameraFps);
   }
 
   const audioContext = new AudioContext();
@@ -724,9 +800,10 @@ async function runOverlay() {
     const nextStructure = data.players.map((player) => [player.id, player.mediaMode, player.idleImage || "", player.talkingImage || ""].join(":")).join("|");
     let stage = app.querySelector(".overlay-stage");
     if (!stage || nextStructure !== playerStructure) {
+      app.querySelectorAll("img[data-webcam-src]").forEach((image) => { image.webcamSocket?.close(); if (image.dataset.webcamBlob) URL.revokeObjectURL(image.dataset.webcamBlob); });
       app.innerHTML = `<main class="overlay-stage ${escapeHtml(data.layout)}">${data.players.map(avatarMarkup).join("")}</main>`;
       playerStructure = nextStructure;
-      return;
+      stage = app.querySelector(".overlay-stage");
     }
     stage.className = `overlay-stage ${data.layout}`;
     [...stage.querySelectorAll(".avatar")].forEach((avatar, index) => {
@@ -742,6 +819,7 @@ async function runOverlay() {
         if (element && image && element.getAttribute("src") !== image) element.src = image;
       }
     });
+    stage.querySelectorAll("img[data-webcam-src]").forEach((image) => connectWebcamStream(image, id, overlayToken, image.closest(".avatar").dataset.playerId));
   };
   try {
     render(await api(`/api/overlay/${id}/${overlayToken}`));

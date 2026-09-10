@@ -7,6 +7,7 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import { fileTypeFromBuffer, fileTypeFromFile } from "file-type";
 import { PrismaClient } from "@prisma/client";
+import WebSocket, { WebSocketServer } from "ws";
 
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || "0.0.0.0";
@@ -480,5 +481,54 @@ app.use((error, req, res, _next) => {
 
 await importLegacyState();
 const server = app.listen(port, host, () => console.log(`Zephikyu PNGCalls is ready at http://${host}:${port}`));
-async function shutdown() { server.close(async () => { await prisma.$disconnect(); process.exit(0); }); }
+const webcamSockets = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 });
+const webcamViewers = new Map();
+const webcamPublishers = new Map();
+const webcamKey = (roomId, playerId) => `${roomId}:${playerId}`;
+
+webcamSockets.on("connection", (socket, context) => {
+  const key = webcamKey(context.roomId, context.playerId);
+  if (context.role === "viewer") {
+    const viewers = webcamViewers.get(key) || new Set();
+    viewers.add(socket);
+    webcamViewers.set(key, viewers);
+    socket.on("close", () => { viewers.delete(socket); if (!viewers.size) webcamViewers.delete(key); });
+    return;
+  }
+  webcamPublishers.get(key)?.close(1000, "Camera replaced");
+  webcamPublishers.set(key, socket);
+  let frameWindow = Date.now();
+  let frameCount = 0;
+  socket.on("message", (frame, isBinary) => {
+    const now = Date.now();
+    if (now - frameWindow >= 1000) { frameWindow = now; frameCount = 0; }
+    frameCount += 1;
+    const last = frame.length - 1;
+    if (!isBinary || frame.length < 100 || frame.length > 512 * 1024 || frameCount > 65 || frame[0] !== 0xff || frame[1] !== 0xd8 || frame[last - 1] !== 0xff || frame[last] !== 0xd9) return;
+    for (const viewer of webcamViewers.get(key) || []) {
+      if (viewer.readyState === WebSocket.OPEN && viewer.bufferedAmount < 1024 * 1024) viewer.send(frame, { binary: true });
+    }
+  });
+  socket.on("close", () => { if (webcamPublishers.get(key) === socket) webcamPublishers.delete(key); });
+});
+
+server.on("upgrade", async (request, socket, head) => {
+  try {
+    const parts = new URL(request.url, "http://localhost").pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    if (parts.length !== 5 || parts[0] !== "ws" || !["publish", "view"].includes(parts[1])) return socket.destroy();
+    const [, role, roomId, roomToken, playerId] = parts;
+    const room = await prisma.room.findUnique({ where: { id: cleanId(roomId) }, include: { players: true } });
+    const player = room?.players.find((entry) => entry.id === cleanId(playerId));
+    if (!room || !player || player.mediaMode !== "webcam") return socket.destroy();
+    if (role === "view" && !validRoomToken(roomToken, room.overlayToken)) return socket.destroy();
+    if (role === "publish") {
+      const credential = parseCookies(request)[guestCookieName(room.id)] || "";
+      const [cookiePlayerId, cookieKey] = credential.split(".", 2);
+      if (!validRoomToken(roomToken, room.joinToken) || cookiePlayerId !== player.id || !player.joinKey || !safeEqual(cookieKey, player.joinKey)) return socket.destroy();
+    }
+    webcamSockets.handleUpgrade(request, socket, head, (client) => webcamSockets.emit("connection", client, { role: role === "view" ? "viewer" : "publisher", roomId: room.id, playerId: player.id }));
+  } catch { socket.destroy(); }
+});
+
+async function shutdown() { webcamSockets.close(); server.close(async () => { await prisma.$disconnect(); process.exit(0); }); }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);

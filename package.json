@@ -10,7 +10,8 @@
     "db:init": "node --no-warnings scripts/init-db.mjs",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "check": "node --check server.mjs && node --check public/app.js && node --check scripts/init-db.mjs && prisma validate"
+    "check": "node --check server.mjs && node --check public/app.js && node --check scripts/init-db.mjs && node --check scripts/test-webcam-ws.mjs && prisma validate",
+    "test:webcam": "node scripts/test-webcam-ws.mjs"
   },
   "engines": {
     "node": ">=22.5"
@@ -21,7 +22,8 @@
     "express-rate-limit": "^8.7.0",
     "file-type": "^22.0.2",
     "helmet": "^8.3.0",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "prisma": "^6.12.0"

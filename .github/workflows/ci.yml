@@ -21,6 +21,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run test:webcam
       - run: npm audit --omit=dev
       - run: bash -n proxmox/zephikyu-pngcalls.sh
       - run: bash -n proxmox/install.sh
