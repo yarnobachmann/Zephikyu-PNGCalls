@@ -15,6 +15,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: #080305; }
 button, input, select { font: inherit; }
 button { color: inherit; }
@@ -181,6 +182,23 @@ h1 { margin: 5px 0 0; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -.065
 .auth-panel h2 { margin: 8px 0; font-size: clamp(2rem, 4vw, 3.2rem); letter-spacing: -.055em; }
 .form-error { min-height: 1.4em; margin: 0; color: #ff8296; }
 
+.tutorial-helper { position: fixed; right: 18px; bottom: 12px; z-index: 45; }
+.tutorial-helper button { position: relative; display: block; width: 128px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.tutorial-helper img { display: block; width: 128px; height: 128px; object-fit: contain; filter: drop-shadow(0 12px 22px #000a); }
+.tutorial-balloon { position: absolute; right: 96px; bottom: 78px; width: max-content; max-width: 190px; padding: 9px 12px; border: 1px solid #7d2a3d; border-radius: 13px 13px 3px 13px; background: #fff3f5; color: #2a0710; font-size: .875rem; font-weight: 750; box-shadow: 0 12px 36px #0008; }
+.tutorial-prompt { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; background: #000c; backdrop-filter: blur(6px); }
+.tutorial-prompt-card { width: min(580px, 100%); display: grid; grid-template-columns: 180px 1fr; align-items: center; gap: 24px; padding: 26px; border: 1px solid #7d2a3d; border-radius: 22px; background: linear-gradient(145deg, #241017, #10070a); box-shadow: 0 30px 100px #000d; }
+.tutorial-prompt-card img { width: 180px; height: 180px; object-fit: contain; }
+.tutorial-prompt-card h2 { margin: 7px 0; font-size: clamp(1.55rem, 4vw, 2.3rem); }
+.tutorial-prompt-card p { margin: 0 0 20px; color: var(--muted); }
+.tutorial-popover { position: fixed; z-index: 70; width: min(370px, calc(100vw - 24px)); padding: 16px; border: 1px solid #a52c46; border-radius: 16px; background: #18090e; box-shadow: 0 24px 80px #000d, 0 0 28px #d0193c38; }
+.tutorial-copy { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 12px; }
+.tutorial-copy img { width: 72px; height: 72px; object-fit: contain; }
+.tutorial-copy p { margin: 5px 0 0; color: #f0d9dd; font-size: .925rem; line-height: 1.5; }
+.tutorial-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 14px; }
+.tutorial-actions > div { display: flex; gap: 8px; }
+.tutorial-highlight { position: relative; z-index: 55; outline: 3px solid #ff365b !important; outline-offset: 5px; border-radius: 10px; box-shadow: 0 0 0 8px #d0193c28, 0 0 36px #d0193c88 !important; }
+
 @keyframes reveal { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 
 @media (max-width: 900px) {
@@ -205,4 +223,10 @@ h1 { margin: 5px 0 0; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -.065
   .two-col { grid-template-columns: 1fr; }
   .animation-controls { grid-template-columns: 1fr; }
   .room-callout { grid-template-columns: 1fr; }
+  .tutorial-helper { right: 6px; bottom: 6px; }
+  .tutorial-helper button, .tutorial-helper img { width: 94px; height: 94px; }
+  .tutorial-balloon { right: 70px; bottom: 58px; }
+  .tutorial-prompt-card { grid-template-columns: 1fr; text-align: center; }
+  .tutorial-prompt-card img { width: 120px; height: 120px; margin: 0 auto; }
+  .tutorial-prompt-card .actions { justify-content: center; }
 }

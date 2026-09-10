@@ -93,7 +93,7 @@ setInterval(() => {
     nextFrame.onerror = () => { delete image.dataset.webcamLoading; };
     nextFrame.src = `${image.dataset.webcamSrc}?v=${Date.now()}`;
   });
-}, 350);
+}, 100);
 
 async function api(url, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
@@ -115,6 +115,91 @@ function toast(message) {
   node.textContent = message;
   document.body.append(node);
   setTimeout(() => node.remove(), 1800);
+}
+
+const tutorialImage = "/assets/tutorial-zeph.gif";
+function tutorialSteps() {
+  if (isJoin && document.querySelector("#join-form")) return [
+    ["input[name='name']", "Start with the name that should appear below your avatar or camera."],
+    ["#media-mode", "Choose PNG images or Webcam. Selecting Webcam hides the PNG uploads and opens the camera setup."],
+    ["#find-cameras", "Find cameras lists every detected source. If one is busy, choose a different camera from the list."],
+    ["input[name='accent']", "Pick the accent used for your speaking outline, camera border, and glow."],
+    ["#animate-speaking", "Turn on a speaking animation, then choose the style beside it."],
+    ["#join-form button[type='submit']", "Join when the preview and settings look right. Keep this page open while playing."],
+  ];
+  if (isJoin) return [
+    ["#camera-output-preview", "This is the exact camera crop sent to the overlay."],
+    ["#crop-controls", "Adjust zoom and position here. Changes are saved on this device."],
+    [".meter", "The meter shows microphone activity. Your speaking state changes automatically."],
+    ["#leave-room", "Use this when you want to leave the overlay and forget this room on this device."],
+  ];
+  if (document.querySelector("#auth-form")) return [
+    ["#auth-form input[name='username']", "Create or enter the private host account used to manage rooms."],
+    ["#auth-form input[name='password']", "Use a unique password of at least 12 characters."],
+    ["#auth-form button[type='submit']", "Sign in to open the host dashboard. Invited players never need an account."],
+  ];
+  if (document.querySelector("#create-form")) return [
+    ["#create-form input[name='name']", "Give the room a name that you will recognize in the host dashboard."],
+    ["#create-form button[type='submit']", "Create the room to receive separate player invitation and OBS overlay links."],
+  ];
+  return [
+    ["#copy-join", "Copy this invitation link and send it to every player who should appear."],
+    ["#copy-overlay", "Copy this private overlay link into an OBS Browser Source."],
+    ["[data-view='players']", "The player room shows who has joined and lets you edit each player."],
+    ["[data-view='settings']", "Settings control the room name, layout, background, and optional Discord connection."],
+  ];
+}
+
+function startTutorial() {
+  const steps = tutorialSteps().map(([selector, copy]) => ({ target: document.querySelector(selector), copy })).filter((step) => step.target?.getClientRects().length);
+  if (!steps.length) return toast("Open a room or player setup first, then press Zeph for help.");
+  let index = 0;
+  const popover = document.createElement("section");
+  popover.className = "tutorial-popover";
+  popover.setAttribute("role", "dialog");
+  popover.setAttribute("aria-live", "polite");
+  document.body.append(popover);
+  const cleanup = () => {
+    document.querySelectorAll(".tutorial-highlight").forEach((node) => node.classList.remove("tutorial-highlight"));
+    popover.remove();
+    localStorage.setItem("pngcalls.tutorialSeen", "true");
+  };
+  const show = () => {
+    document.querySelectorAll(".tutorial-highlight").forEach((node) => node.classList.remove("tutorial-highlight"));
+    const step = steps[index];
+    step.target.classList.add("tutorial-highlight");
+    step.target.scrollIntoView({ behavior: "smooth", block: "center" });
+    popover.innerHTML = `<div class="tutorial-copy"><img src="${tutorialImage}" alt="" /><div><span class="eyebrow">Step ${index + 1} of ${steps.length}</span><p>${step.copy}</p></div></div><div class="tutorial-actions"><button class="btn ghost tutorial-close" type="button">Close</button><div><button class="btn ghost tutorial-back" type="button" ${index === 0 ? "disabled" : ""}>Back</button><button class="btn primary tutorial-next" type="button">${index === steps.length - 1 ? "Finish" : "Next"}</button></div></div>`;
+    setTimeout(() => {
+      const rect = step.target.getBoundingClientRect();
+      const popoverRect = popover.getBoundingClientRect();
+      const below = rect.bottom + 14;
+      popover.style.top = `${below + popoverRect.height < innerHeight - 12 ? below : Math.max(12, rect.top - popoverRect.height - 14)}px`;
+      popover.style.left = `${clamp(rect.left, 12, innerWidth - popoverRect.width - 12)}px`;
+    }, 220);
+    popover.querySelector(".tutorial-close").onclick = cleanup;
+    popover.querySelector(".tutorial-back").onclick = () => { if (index > 0) { index -= 1; show(); } };
+    popover.querySelector(".tutorial-next").onclick = () => { if (index === steps.length - 1) cleanup(); else { index += 1; show(); } };
+  };
+  show();
+}
+
+function mountTutorialHelper() {
+  if (isOverlay || document.querySelector(".tutorial-helper")) return;
+  if (!app.children.length) { setTimeout(mountTutorialHelper, 400); return; }
+  const helper = document.createElement("aside");
+  helper.className = "tutorial-helper";
+  helper.innerHTML = `<button type="button" aria-label="Open PNGCalls tutorial"><span class="tutorial-balloon">Need help? Press me.</span><img src="${tutorialImage}" alt="Zeph tutorial helper" /></button>`;
+  document.body.append(helper);
+  helper.querySelector("button").onclick = startTutorial;
+  if (localStorage.getItem("pngcalls.tutorialSeen")) return;
+  const prompt = document.createElement("div");
+  prompt.className = "tutorial-prompt";
+  prompt.innerHTML = `<section class="tutorial-prompt-card" role="dialog" aria-modal="true" aria-labelledby="tutorial-title"><img src="${tutorialImage}" alt="" /><div><div class="eyebrow">Welcome to PNGCalls</div><h2 id="tutorial-title">Is this your first time here?</h2><p>Zeph can show you where everything is.</p><div class="actions"><button class="btn primary tutorial-yes" type="button">Yes, show me</button><button class="btn ghost tutorial-no" type="button">No, thanks</button></div></div></section>`;
+  document.body.append(prompt);
+  prompt.querySelector(".tutorial-yes").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialSeen", "true"); startTutorial(); };
+  prompt.querySelector(".tutorial-no").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialSeen", "true"); };
+  prompt.querySelector(".tutorial-yes").focus();
 }
 
 function brandMarkup() {
@@ -390,9 +475,9 @@ async function runJoin() {
             <video id="camera-test-preview" autoplay muted playsinline hidden></video>
             <canvas id="crop-test-preview" class="camera-preview" width="640" height="360" hidden></canvas>
             ${cropControlsMarkup(true)}
-            <p id="camera-status" class="hint">Start OBS Virtual Camera, then select it here. A normal webcam also works.</p>
+            <p id="camera-status" class="hint">Start OBS Virtual Camera, then press Find cameras. If the default camera is busy, you can still choose another detected source.</p>
           </section>
-          <p id="webcam-note" class="hint" hidden>Your camera is shown as a low-frame-rate tile in OBS. PNGCalls replaces the latest frame and does not make a video recording.</p>
+          <p id="webcam-note" class="hint" hidden>Your camera is sent at up to 10 frames per second. PNGCalls replaces the latest frame and does not make a video recording.</p>
           <div class="field"><label>Speaking accent</label><input class="input" name="accent" type="color" value="#d0193c" /><span class="hint">Used for the name outline, webcam border, and glow while speaking.</span></div>
           <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input" disabled><option value="bounce">Bounce</option><option value="pulse">Pulse</option><option value="shake">Shake</option><option value="glow">Glow</option></select></div></div>
           <button class="btn primary" type="submit">Join and enable microphone</button>
@@ -435,16 +520,25 @@ async function runJoin() {
     };
     document.querySelector("#find-cameras").onclick = async () => {
       cameraStatus.textContent = "Requesting camera access...";
+      let previewError = null;
       try {
         await openCameraPreview(cameraSelect.value);
+      } catch (error) {
+        previewError = error;
+        stopCameraPreview();
+        cropPreview.hidden = true;
+        cropControls.hidden = true;
+      }
+      try {
         const devices = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "videoinput");
-        const preferred = cameraSelect.value || devices.find((device) => /obs virtual camera/i.test(device.label))?.deviceId || devices[0]?.deviceId || "";
+        const activeDevice = cameraPreviewStream?.getVideoTracks()[0]?.getSettings().deviceId || "";
         cameraSelect.innerHTML = devices.length
-          ? devices.map((device, index) => `<option value="${escapeHtml(device.deviceId)}" ${device.deviceId === preferred ? "selected" : ""}>${escapeHtml(device.label || `Camera ${index + 1}`)}</option>`).join("")
+          ? `${activeDevice ? "" : `<option value="" selected disabled>Choose an available camera</option>`}${devices.map((device, index) => `<option value="${escapeHtml(device.deviceId)}" ${device.deviceId === activeDevice ? "selected" : ""}>${escapeHtml(device.label || `Camera ${index + 1}`)}</option>`).join("")}`
           : `<option value="">No cameras found</option>`;
         cameraSelect.disabled = !devices.length;
-        if (preferred && cameraPreviewStream?.getVideoTracks()[0]?.getSettings().deviceId !== preferred) await openCameraPreview(preferred);
-        cameraStatus.textContent = devices.length ? `${devices.length} camera source${devices.length === 1 ? "" : "s"} found.` : "No camera sources were found.";
+        cameraStatus.textContent = devices.length
+          ? previewError ? `${devices.length} camera source${devices.length === 1 ? "" : "s"} found. The default camera is unavailable, so choose another source from the list.` : `${devices.length} camera source${devices.length === 1 ? "" : "s"} found and ready.`
+          : "No camera sources were found.";
       } catch (error) {
         stopCameraPreview();
         cropPreview.hidden = true;
@@ -457,6 +551,8 @@ async function runJoin() {
         await openCameraPreview(cameraSelect.value);
         cameraStatus.textContent = "Camera source ready.";
       } catch (error) {
+        cropPreview.hidden = true;
+        cropControls.hidden = true;
         cameraStatus.textContent = `Could not open this camera: ${error.message}`;
       }
     };
@@ -593,7 +689,7 @@ async function startMic(id, joinToken, identity, storageKey) {
         } catch {}
         sendingFrame = false;
       }, "image/jpeg", 0.72);
-    }, 350);
+    }, 100);
   }
 
   const audioContext = new AudioContext();
@@ -659,3 +755,4 @@ async function runOverlay() {
 if (isOverlay) runOverlay();
 else if (isJoin) runJoin();
 else initializeHost();
+if (!isOverlay) setTimeout(mountTutorialHelper, 700);

@@ -110,7 +110,7 @@ This approach is game-neutral. It cannot automatically read the roster inside a 
 
 ## Webcam mode
 
-Webcam mode captures camera frames in the guest browser, compresses them as JPEG, and sends them only to this self-hosted server. The latest frame is overwritten instead of recorded as a video. A low frame rate keeps server and network use reasonable. For full-motion video across the internet, a later WebRTC and TURN deployment would be the appropriate upgrade.
+Webcam mode captures camera frames in the guest browser, compresses them as JPEG, and sends them only to this self-hosted server. The latest frame is overwritten instead of recorded as a video. Webcam delivery targets up to 10 frames per second at 640 by 360 pixels. For full-motion video across the internet, a later WebRTC and TURN deployment would be the appropriate upgrade.
 
 ### OBS Virtual Camera
 
@@ -122,6 +122,12 @@ Webcam mode captures camera frames in the guest browser, compresses them as JPEG
 6. Check the 16:9 output preview and join.
 
 OBS Virtual Camera is exposed to the browser as a normal camera device. No OBS plugin or game mod is required. Camera device names become available only after the browser grants camera permission. The camera picker and crop settings are remembered in that guest's browser.
+
+If the default camera is already being used by another application, PNGCalls still lists the other detected camera sources. Select another source from the list and its preview will open separately.
+
+## Built-in tutorial
+
+On the first visit, Zeph asks whether the user wants a guided tour. The tour highlights the important controls for the current host or player screen. Choosing no, closing the tour, or finishing it keeps Zeph available in the lower-right corner with a help button. Tutorial completion is stored only in that browser.
 
 ## Optional Discord connection
 

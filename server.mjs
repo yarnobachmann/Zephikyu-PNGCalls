@@ -194,7 +194,7 @@ const upload = multer({
 const authLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: "draft-8", legacyHeaders: false });
 const joinLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
 const heartbeatLimit = rateLimit({ windowMs: 60 * 1000, limit: 180, standardHeaders: "draft-8", legacyHeaders: false });
-const webcamLimit = rateLimit({ windowMs: 60 * 1000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false });
+const webcamLimit = rateLimit({ windowMs: 60 * 1000, limit: 720, standardHeaders: "draft-8", legacyHeaders: false });
 
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
