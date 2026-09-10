@@ -1,6 +1,6 @@
 {
   "name": "zephikyu-pngcalls",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Zephikyu branded, self-hosted PNG and webcam calls for OBS.",
@@ -10,8 +10,9 @@
     "db:init": "node --no-warnings scripts/init-db.mjs",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "check": "node --check server.mjs && node --check public/app.js && node --check scripts/init-db.mjs && node --check scripts/test-webcam-ws.mjs && prisma validate",
-    "test:webcam": "node scripts/test-webcam-ws.mjs"
+    "check": "node --check server.mjs && node --check public/app.js && node --check companion/pngcalls-companion.cjs && node --check scripts/init-db.mjs && node --check scripts/test-webcam-ws.mjs && node --check scripts/build-companion.mjs && prisma validate",
+    "test:webcam": "node scripts/test-webcam-ws.mjs",
+    "build:companion": "node scripts/build-companion.mjs"
   },
   "engines": {
     "node": ">=22.5"
@@ -26,6 +27,7 @@
     "ws": "^8.21.3"
   },
   "devDependencies": {
+    "postject": "^1.0.0-alpha.6",
     "prisma": "^6.12.0"
   }
 }

@@ -221,6 +221,9 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .discord-card .btn { justify-self: start; }
 .discord-card .discord-btn { background: #5865f2; border-color: #7983f5; color: white; }
 .discord-config-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.companion-panel { display: grid; gap: 16px; padding: 18px; border: 2px solid #090708; border-radius: 18px 12px 20px 11px; background: #10090b; }
+.companion-panel h3 { margin: 4px 0 0; font-size: 1.15rem; }
+.pairing-modal ol { margin: 0; padding-left: 22px; color: var(--muted); line-height: 1.65; }
 .settings-actions { grid-column: 1 / -1; display: flex; justify-content: space-between; }
 
 .auth-page { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(420px, .7fr); background: #080305; }

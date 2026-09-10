@@ -1,6 +1,7 @@
 node_modules/
 data/
 uploads/
+dist/
 .env
 .env.proxmox
 *.user

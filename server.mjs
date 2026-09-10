@@ -24,6 +24,7 @@ const prisma = new PrismaClient();
 const app = express();
 const clients = new Map();
 const discordStates = new Map();
+const discordCompanions = new Map();
 const auditSalt = crypto.randomBytes(32);
 const allowedImages = new Map([["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/gif", "gif"]]);
 const speakingAnimations = new Set(["none", "bounce", "pulse", "shake", "glow"]);
@@ -96,6 +97,41 @@ function discordCallbackUrl() {
   return process.env.DISCORD_REDIRECT_URI || `${configuredOrigin.replace(/\/$/, "")}/auth/discord/callback`;
 }
 
+const companionDownloadUrl = "/downloads/windows-companion";
+const companionReleaseUrl = "https://github.com/yarnobachmann/Zephikyu-PNGCalls/releases/latest/download/PNGCalls-Companion.exe";
+const closeDiscordCompanions = (reason) => {
+  for (const socket of discordCompanions.values()) socket.close(4001, reason);
+};
+
+async function discordAccessToken() {
+  if (process.env.NODE_ENV === "test" && process.env.DISCORD_TEST_ACCESS_TOKEN) return process.env.DISCORD_TEST_ACCESS_TOKEN;
+  const connection = await prisma.discordConnection.findUnique({ where: { id: 1 } });
+  if (!connection?.accessTokenEncrypted) throw new Error("Reconnect Discord from Settings before pairing the companion.");
+  if (!connection.tokenExpiresAt || connection.tokenExpiresAt.getTime() > Date.now() + 60_000) return decryptCredential(connection.accessTokenEncrypted);
+  if (!connection.refreshTokenEncrypted) throw new Error("The Discord connection expired. Reconnect it from Settings.");
+  const config = await discordOAuthConfig();
+  if (!config) throw new Error("Discord OAuth is not configured.");
+  const response = await fetch("https://discord.com/api/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      grant_type: "refresh_token",
+      refresh_token: decryptCredential(connection.refreshTokenEncrypted),
+    }),
+  });
+  if (!response.ok) throw new Error("Discord access expired. Reconnect it from Settings.");
+  const refreshed = await response.json();
+  await prisma.discordConnection.update({ where: { id: 1 }, data: {
+    accessTokenEncrypted: encryptCredential(refreshed.access_token),
+    refreshTokenEncrypted: refreshed.refresh_token ? encryptCredential(refreshed.refresh_token) : connection.refreshTokenEncrypted,
+    tokenExpiresAt: new Date(Date.now() + Number(refreshed.expires_in || 3600) * 1000),
+    scopes: cleanText(refreshed.scope, connection.scopes || "", 300),
+  } });
+  return refreshed.access_token;
+}
+
 function parseCookies(req) {
   return Object.fromEntries(String(req.headers.cookie || "").split(";").map((part) => part.trim()).filter(Boolean).map((part) => {
     const index = part.indexOf("=");
@@ -165,6 +201,14 @@ function publicRoom(room) {
   const activeIds = new Set(active.map((player) => player.id));
   return {
     id: room.id, name: room.name, layout: room.layout, background: room.background,
+    companion: {
+      paired: Boolean(room.companionTokenHash),
+      online: Boolean(room.companionLastSeen && room.companionLastSeen.getTime() >= Date.now() - 15_000),
+      lastSeen: room.companionLastSeen?.getTime() || null,
+      channelId: room.discordChannelId || null,
+      channelName: room.discordChannelName || null,
+      downloadUrl: companionDownloadUrl,
+    },
     players: room.players.filter((player) => activeIds.has(player.id) || (player.pinned && player.presence?.source !== "browser")).map((player) => ({
       id: player.id, name: player.name, idleImage: player.idleImage, talkingImage: player.talkingImage || player.idleImage, accent: player.accent,
       mediaMode: player.mediaMode || "png",
@@ -311,6 +355,8 @@ app.post("/api/auth/logout", requireHost, requireCsrf, async (req, res) => {
   res.status(204).end();
 });
 
+app.get("/downloads/windows-companion", requireHost, (_req, res) => res.redirect(302, companionReleaseUrl));
+
 app.get("/api/discord/status", requireHost, async (_req, res) => {
   const connection = await prisma.discordConnection.findUnique({ where: { id: 1 } });
   const config = await discordOAuthConfig().catch((error) => { console.error("Discord configuration could not be decrypted", error); return null; });
@@ -319,7 +365,8 @@ app.get("/api/discord/status", requireHost, async (_req, res) => {
     clientId: config?.clientId || "",
     source: config?.source || null,
     callbackUrl: discordCallbackUrl(),
-    connected: connection ? { username: connection.username, connectedAt: connection.connectedAt } : null,
+    connected: connection ? { username: connection.username, connectedAt: connection.connectedAt, rpcReady: connection.scopes.split(" ").includes("rpc") } : null,
+    companionDownloadUrl,
   });
 });
 
@@ -336,11 +383,13 @@ app.post("/api/discord/config", requireHost, requireCsrf, async (req, res) => {
     prisma.discordOAuthConfig.upsert({ where: { id: 1 }, create: { id: 1, clientId, clientSecretEncrypted: encrypted }, update: { clientId, clientSecretEncrypted: encrypted } }),
     ...(changed ? [prisma.discordConnection.deleteMany()] : []),
   ]);
+  if (changed) closeDiscordCompanions("Discord configuration changed");
   await audit(req, "discord.configure", "success", "settings");
   res.json({ configured: true, clientId, source: "settings", callbackUrl: discordCallbackUrl(), connected: null });
 });
 
 app.delete("/api/discord/config", requireHost, requireCsrf, async (req, res) => {
+  closeDiscordCompanions("Discord configuration removed");
   await prisma.$transaction([prisma.discordConnection.deleteMany(), prisma.discordOAuthConfig.deleteMany()]);
   await audit(req, "discord.configure", "removed", "settings");
   res.status(204).end();
@@ -353,7 +402,7 @@ app.get("/auth/discord", requireHost, async (req, res) => {
   const callback = discordCallbackUrl();
   discordStates.set(hash(state), { hostSessionId: req.hostContext.authSession.id, expiresAt: Date.now() + 10 * 60 * 1000, config, callback });
   const authorize = new URL("https://discord.com/oauth2/authorize");
-  authorize.search = new URLSearchParams({ client_id: config.clientId, response_type: "code", redirect_uri: callback, scope: "identify", state, prompt: "consent" }).toString();
+  authorize.search = new URLSearchParams({ client_id: config.clientId, response_type: "code", redirect_uri: callback, scope: "identify rpc rpc.voice.read", state, prompt: "consent" }).toString();
   res.redirect(authorize.toString());
 });
 
@@ -376,14 +425,45 @@ app.get("/auth/discord/callback", async (req, res) => {
   if (!userResponse.ok) return res.status(502).send("Discord profile lookup failed.");
   const user = await userResponse.json();
   const username = cleanText(user.global_name || user.username, "Discord user", 80);
-  await prisma.discordConnection.upsert({ where: { id: 1 }, create: { id: 1, discordUserId: String(user.id), username }, update: { discordUserId: String(user.id), username, connectedAt: new Date() } });
+  const expiresAt = new Date(Date.now() + Number(credentials.expires_in || 3600) * 1000);
+  const connectionData = {
+    discordUserId: String(user.id), username,
+    accessTokenEncrypted: encryptCredential(credentials.access_token),
+    refreshTokenEncrypted: credentials.refresh_token ? encryptCredential(credentials.refresh_token) : null,
+    tokenExpiresAt: expiresAt, scopes: cleanText(credentials.scope, "", 300), connectedAt: new Date(),
+  };
+  await prisma.discordConnection.upsert({ where: { id: 1 }, create: { id: 1, ...connectionData }, update: connectionData });
   await audit(req, "discord.connect", "success", String(user.id));
   res.redirect("/?discord=connected");
 });
 
 app.post("/api/discord/disconnect", requireHost, requireCsrf, async (req, res) => {
+  closeDiscordCompanions("Discord disconnected");
   await prisma.discordConnection.deleteMany();
   await audit(req, "discord.disconnect", "success");
+  res.status(204).end();
+});
+
+app.post("/api/sessions/:sessionId/discord-companion/pair", requireHost, requireCsrf, async (req, res) => {
+  const room = await getRoom(req, res); if (!room) return;
+  const connection = await prisma.discordConnection.findUnique({ where: { id: 1 } });
+  if (!connection?.accessTokenEncrypted || !connection.scopes.split(" ").includes("rpc")) {
+    return res.status(409).json({ error: "Connect Discord again before pairing the companion." });
+  }
+  const pairingToken = token(32);
+  await prisma.room.update({ where: { id: room.id }, data: { companionTokenHash: hash(pairingToken), companionLastSeen: null, discordChannelId: null, discordChannelName: null } });
+  discordCompanions.get(room.id)?.close(4001, "Pairing replaced");
+  await audit(req, "discord.companion_pair", "success", room.id);
+  res.json({ pairingCode: `${room.id}.${pairingToken}`, downloadUrl: companionDownloadUrl });
+});
+
+app.delete("/api/sessions/:sessionId/discord-companion/pair", requireHost, requireCsrf, async (req, res) => {
+  const room = await getRoom(req, res); if (!room) return;
+  discordCompanions.get(room.id)?.close(4001, "Pairing removed");
+  await prisma.room.update({ where: { id: room.id }, data: { companionTokenHash: null, companionLastSeen: null, discordChannelId: null, discordChannelName: null } });
+  await prisma.presence.updateMany({ where: { player: { roomId: room.id }, source: "discord" }, data: { present: false, speaking: false, lastSeen: new Date() } });
+  await audit(req, "discord.companion_pair", "removed", room.id);
+  await broadcast(room.id);
   res.status(204).end();
 });
 
@@ -609,6 +689,7 @@ app.use((error, req, res, _next) => {
 await importLegacyState();
 const server = app.listen(port, host, () => console.log(`Zephikyu PNGCalls is ready at http://${host}:${port}`));
 const webcamSockets = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 });
+const discordCompanionSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const webcamViewers = new Map();
 const webcamPublishers = new Map();
 const webcamKey = (roomId, playerId) => `${roomId}:${playerId}`;
@@ -639,9 +720,84 @@ webcamSockets.on("connection", (socket, context) => {
   socket.on("close", () => { if (webcamPublishers.get(key) === socket) webcamPublishers.delete(key); });
 });
 
+async function syncDiscordSnapshot(roomId, payload) {
+  const channel = payload?.channel && typeof payload.channel === "object" ? payload.channel : null;
+  const rawUsers = Array.isArray(payload?.users) ? payload.users.slice(0, 50) : [];
+  const users = rawUsers.map((entry) => ({
+    discordId: String(entry?.id || "").replace(/\D/g, "").slice(0, 24),
+    name: cleanText(entry?.name || entry?.username, "Discord user", 60),
+    speaking: Boolean(entry?.speaking), muted: Boolean(entry?.muted), bot: Boolean(entry?.bot),
+  })).filter((entry) => entry.discordId && !entry.bot);
+  const activeIds = new Set(users.map((entry) => `dc-${roomId}-${entry.discordId}`));
+  const existing = await prisma.player.findMany({ where: { roomId, presence: { source: "discord" } }, select: { id: true } });
+  const operations = [];
+  for (const user of users) {
+    const id = `dc-${roomId}-${user.discordId}`;
+    operations.push(prisma.player.upsert({ where: { id }, create: {
+      id, roomId, name: user.name, pinned: false, mediaMode: "png",
+      presence: { create: { present: true, speaking: user.speaking, muted: user.muted, source: "discord", lastSeen: new Date() } },
+    }, update: { name: user.name, presence: { upsert: { create: { present: true, speaking: user.speaking, muted: user.muted, source: "discord", lastSeen: new Date() }, update: { present: true, speaking: user.speaking, muted: user.muted, source: "discord", lastSeen: new Date() } } } } }));
+  }
+  for (const player of existing) if (!activeIds.has(player.id)) operations.push(prisma.presence.updateMany({ where: { playerId: player.id }, data: { present: false, speaking: false, lastSeen: new Date() } }));
+  operations.push(prisma.room.update({ where: { id: roomId }, data: {
+    companionLastSeen: new Date(),
+    discordChannelId: channel?.id ? cleanText(channel.id, null, 80) : null,
+    discordChannelName: channel?.name ? cleanText(channel.name, "Discord call", 100) : null,
+    updatedAt: new Date(),
+  } }));
+  await prisma.$transaction(operations);
+  await broadcast(roomId);
+}
+
+discordCompanionSockets.on("connection", (socket) => {
+  let roomId = null;
+  let authorized = false;
+  const authTimeout = setTimeout(() => socket.close(4003, "Pairing timed out"), 7000);
+  socket.on("message", async (message, isBinary) => {
+    try {
+      if (isBinary) return socket.close(4003, "Text messages required");
+      const payload = JSON.parse(String(message));
+      if (!authorized) {
+        if (payload?.type !== "pair") return socket.close(4003, "Pairing required");
+        const requestedRoomId = cleanId(payload.roomId, "");
+        const room = await prisma.room.findUnique({ where: { id: requestedRoomId } });
+        const suppliedHash = hash(String(payload.token || ""));
+        if (!room?.companionTokenHash || !safeEqual(suppliedHash, room.companionTokenHash)) return socket.close(4003, "Invalid pairing code");
+        clearTimeout(authTimeout);
+        roomId = room.id;
+        authorized = true;
+        discordCompanions.get(roomId)?.close(4001, "Companion replaced");
+        discordCompanions.set(roomId, socket);
+        const config = await discordOAuthConfig();
+        const accessToken = await discordAccessToken();
+        await prisma.room.update({ where: { id: roomId }, data: { companionLastSeen: new Date() } });
+        socket.send(JSON.stringify({ type: "credentials", clientId: config.clientId, accessToken }));
+        await broadcast(roomId);
+        return;
+      }
+      if (payload?.type === "snapshot") await syncDiscordSnapshot(roomId, payload);
+      if (payload?.type === "heartbeat") await prisma.room.update({ where: { id: roomId }, data: { companionLastSeen: new Date() } });
+    } catch (error) {
+      console.error("Discord companion message failed", error);
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "error", message: cleanText(error.message, "Companion update failed", 200) }));
+    }
+  });
+  socket.on("close", async () => {
+    clearTimeout(authTimeout);
+    if (!roomId || discordCompanions.get(roomId) !== socket) return;
+    discordCompanions.delete(roomId);
+    await prisma.room.update({ where: { id: roomId }, data: { companionLastSeen: null } }).catch(() => {});
+    await prisma.presence.updateMany({ where: { player: { roomId }, source: "discord" }, data: { present: false, speaking: false, lastSeen: new Date() } }).catch(() => {});
+    await broadcast(roomId).catch(() => {});
+  });
+});
+
 server.on("upgrade", async (request, socket, head) => {
   try {
     const parts = new URL(request.url, "http://localhost").pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    if (parts.length === 2 && parts[0] === "ws" && parts[1] === "discord") {
+      return discordCompanionSockets.handleUpgrade(request, socket, head, (client) => discordCompanionSockets.emit("connection", client));
+    }
     if (parts.length !== 5 || parts[0] !== "ws" || !["publish", "view"].includes(parts[1])) return socket.destroy();
     const [, role, roomId, roomToken, playerId] = parts;
     const room = await prisma.room.findUnique({ where: { id: cleanId(roomId) }, include: { players: true } });
@@ -657,5 +813,5 @@ server.on("upgrade", async (request, socket, head) => {
   } catch { socket.destroy(); }
 });
 
-async function shutdown() { webcamSockets.close(); server.close(async () => { await prisma.$disconnect(); process.exit(0); }); }
+async function shutdown() { webcamSockets.close(); discordCompanionSockets.close(); server.close(async () => { await prisma.$disconnect(); process.exit(0); }); }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);

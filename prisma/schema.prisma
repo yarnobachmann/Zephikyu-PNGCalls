@@ -25,15 +25,19 @@ model HostSession {
 }
 
 model Room {
-  id           String   @id
-  name         String
-  overlayToken String   @unique
-  joinToken    String   @unique
-  layout       String   @default("row")
-  background   String   @default("transparent")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  players      Player[]
+  id                    String    @id
+  name                  String
+  overlayToken          String    @unique
+  joinToken             String    @unique
+  companionTokenHash    String?   @unique
+  companionLastSeen     DateTime?
+  discordChannelId      String?
+  discordChannelName    String?
+  layout                String    @default("row")
+  background            String    @default("transparent")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  players               Player[]
 }
 
 model Player {
@@ -59,10 +63,14 @@ model Player {
 }
 
 model DiscordConnection {
-  id            Int      @id @default(1)
-  discordUserId String   @unique
-  username      String
-  connectedAt   DateTime @default(now())
+  id                    Int       @id @default(1)
+  discordUserId         String    @unique
+  username              String
+  accessTokenEncrypted  String?
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  scopes                String    @default("")
+  connectedAt           DateTime  @default(now())
 }
 
 model DiscordOAuthConfig {

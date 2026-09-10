@@ -11,7 +11,7 @@ const port = 4192;
 const baseUrl = `http://127.0.0.1:${port}`;
 const socketUrl = `ws://127.0.0.1:${port}`;
 const testRoot = mkdtempSync(path.join(os.tmpdir(), "pngcalls-webcam-test-"));
-const env = { ...process.env, PORT: String(port), HOST: "127.0.0.1", DATA_DIR: path.join(testRoot, "data"), UPLOAD_DIR: path.join(testRoot, "uploads"), NODE_ENV: "test", DISCORD_CLIENT_ID: "", DISCORD_CLIENT_SECRET: "", DISCORD_REDIRECT_URI: "" };
+const env = { ...process.env, PORT: String(port), HOST: "127.0.0.1", DATA_DIR: path.join(testRoot, "data"), UPLOAD_DIR: path.join(testRoot, "uploads"), NODE_ENV: "test", DISCORD_CLIENT_ID: "", DISCORD_CLIENT_SECRET: "", DISCORD_REDIRECT_URI: "", DISCORD_TEST_ACCESS_TOKEN: "test-rpc-access-token" };
 
 const initialized = spawnSync(process.execPath, ["scripts/init-db.mjs"], { env, stdio: "inherit" });
 assert.equal(initialized.status, 0, "Database initialization failed");
@@ -37,6 +37,7 @@ const openSocket = (url, cookie = "") => new Promise((resolve, reject) => {
 
 let publisher;
 let viewer;
+let companion;
 try {
   await waitForServer;
   const setupResponse = await fetch(`${baseUrl}/api/auth/setup`, {
@@ -85,6 +86,41 @@ try {
   assert.equal(roomResponse.status, 201);
   const room = await roomResponse.json();
 
+  const companionConfigResponse = await fetch(`${baseUrl}/api/discord/config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
+    body: JSON.stringify({ clientId: "123456789012345678", clientSecret: discordSecret }),
+  });
+  assert.equal(companionConfigResponse.status, 200);
+  const companionDatabase = new DatabaseSync(path.join(testRoot, "data", "zephikyu.db"));
+  companionDatabase.prepare('INSERT INTO "DiscordConnection" ("id", "discordUserId", "username", "accessTokenEncrypted", "scopes", "connectedAt") VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)').run("111122223333444455", "Host", "test", "identify rpc rpc.voice.read");
+  companionDatabase.close();
+  const pairResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/discord-companion/pair`, {
+    method: "POST",
+    headers: { Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
+  });
+  assert.equal(pairResponse.status, 200);
+  const pairing = await pairResponse.json();
+  const [pairedRoomId, pairingToken] = pairing.pairingCode.split(".", 2);
+  assert.equal(pairedRoomId, room.sessionId);
+  companion = await openSocket(`${socketUrl}/ws/discord`);
+  const companionCredentials = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Companion did not receive credentials")), 5_000);
+    companion.once("message", (message) => { clearTimeout(timeout); resolve(JSON.parse(String(message))); });
+  });
+  companion.send(JSON.stringify({ type: "pair", roomId: room.sessionId, token: pairingToken }));
+  const credentials = await companionCredentials;
+  assert.equal(credentials.type, "credentials");
+  assert.equal(credentials.clientId, "123456789012345678");
+  assert.equal(credentials.accessToken, "test-rpc-access-token");
+  companion.send(JSON.stringify({ type: "snapshot", channel: { id: "777788889999000011", name: "Direct call", type: 1 }, users: [{ id: "222233334444555566", name: "Discord friend", speaking: true, muted: false }] }));
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const companionOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
+  const discordPlayer = companionOverlay.players.find((player) => player.source === "discord");
+  assert.equal(discordPlayer.name, "Discord friend");
+  assert.equal(discordPlayer.speaking, true);
+  assert.equal(companionOverlay.companion.channelName, "Direct call");
+
   const joinResponse = await fetch(`${baseUrl}/api/join/${room.sessionId}/${room.joinToken}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -95,7 +131,7 @@ try {
   const guestCookie = cookiesFrom(joinResponse);
   assert.equal(participant.player.nameFont, "typewriter");
   const overlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
-  assert.equal(overlay.players[0].nameFont, "typewriter");
+  assert.equal(overlay.players.find((player) => player.id === participant.playerId).nameFont, "typewriter");
 
   const placementResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/placements`, {
     method: "PUT",
@@ -104,14 +140,16 @@ try {
   });
   assert.equal(placementResponse.status, 200);
   const placedRoom = await placementResponse.json();
-  assert.equal(placedRoom.players[0].positionX, 21);
-  assert.equal(placedRoom.players[0].positionY, 64);
-  assert.equal(placedRoom.players[0].displaySize, 1.4);
-  assert.equal(placedRoom.players[0].displayLayer, 3);
+  const placedPlayer = placedRoom.players.find((player) => player.id === participant.playerId);
+  assert.equal(placedPlayer.positionX, 21);
+  assert.equal(placedPlayer.positionY, 64);
+  assert.equal(placedPlayer.displaySize, 1.4);
+  assert.equal(placedPlayer.displayLayer, 3);
   const placedOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
-  assert.equal(placedOverlay.players[0].positionX, 21);
-  assert.equal(placedOverlay.players[0].positionY, 64);
-  assert.equal(placedOverlay.players[0].displaySize, 1.4);
+  const placedOverlayPlayer = placedOverlay.players.find((player) => player.id === participant.playerId);
+  assert.equal(placedOverlayPlayer.positionX, 21);
+  assert.equal(placedOverlayPlayer.positionY, 64);
+  assert.equal(placedOverlayPlayer.displaySize, 1.4);
 
   viewer = await openSocket(`${socketUrl}/ws/view/${room.sessionId}/${room.overlayToken}/${participant.playerId}`);
   publisher = await openSocket(`${socketUrl}/ws/publish/${room.sessionId}/${room.joinToken}/${participant.playerId}`, guestCookie);
@@ -135,7 +173,8 @@ try {
   const resetRoom = await resetResponse.json();
   assert.equal(resetRoom.overlayToken, room.overlayToken);
   assert.notEqual(resetRoom.joinToken, room.joinToken);
-  assert.equal(resetRoom.players.length, 0);
+  assert.equal(resetRoom.players.some((player) => player.id === participant.playerId), false);
+  assert.equal(resetRoom.players.some((player) => player.source === "discord"), true);
   const oldInviteResponse = await fetch(`${baseUrl}/api/join/${room.sessionId}/${room.joinToken}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -144,10 +183,11 @@ try {
   assert.equal(oldInviteResponse.status, 401);
   const unchangedOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`);
   assert.equal(unchangedOverlay.status, 200);
-  console.log("Discord settings, webcam transport, guest fonts, placement, and invite reset passed");
+  console.log("Discord companion, webcam transport, guest fonts, placement, and invite reset passed");
 } finally {
   publisher?.terminate();
   viewer?.terminate();
+  companion?.terminate();
   server.kill("SIGTERM");
   await Promise.race([once(server, "exit"), new Promise((resolve) => setTimeout(resolve, 5_000))]);
   rmSync(testRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

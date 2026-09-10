@@ -582,7 +582,7 @@ function renderDashboard() {
       ${brandMarkup()}
       <nav class="nav" aria-label="Dashboard"><button class="nav-item ${activeView === "overlay" ? "active" : ""}" data-view="overlay">◫ Overlay</button><button class="nav-item ${activeView === "players" ? "active" : ""}" data-view="players">⌁ Player room</button><button class="nav-item ${activeView === "settings" ? "active" : ""}" data-view="settings">⚙ Settings</button></nav>
       ${studioShelfMarkup()}
-      <div class="rail-note"><div id="rail-status" class="status-line"><span class="dot ${session.onlineCount ? "live" : ""}"></span>${session.onlineCount ? `${session.onlineCount} connected` : "Waiting for players"}</div>Invite links work alone. Discord is optional.</div>
+      <div class="rail-note"><div id="rail-status" class="status-line"><span class="dot ${session.onlineCount ? "live" : ""}"></span>${session.onlineCount ? `${session.onlineCount} connected` : "Waiting for players"}</div>${session.companion?.online ? `Discord companion connected${session.companion.channelName ? ` to ${escapeHtml(session.companion.channelName)}` : ""}.` : "Invite links work alone. Discord is optional."}</div>
     </aside>
     <main class="main">
       <header class="topbar">
@@ -600,7 +600,7 @@ function renderDashboard() {
           <section class="card">
             <div class="card-head"><div><h2>Players</h2><p class="subtle">A player appears while their join page is open.</p></div><span class="badge">${players.length} ${players.length === 1 ? "PLAYER" : "PLAYERS"}</span></div>
             <div class="player-list">${players.length ? players.map((player) => `<div class="player-row">
-              <div class="player-meta"><div class="player-name">${escapeHtml(player.name)}</div><div class="player-id">${player.mediaMode === "webcam" ? "Webcam and microphone" : player.source === "browser" ? "PNG and microphone" : "Manual PNG"}</div></div>
+              <div class="player-meta"><div class="player-name">${escapeHtml(player.name)}</div><div class="player-id">${player.mediaMode === "webcam" ? "Webcam and microphone" : player.source === "browser" ? "PNG and microphone" : player.source === "discord" ? "Discord call" : "Manual PNG"}</div></div>
               <div class="row-actions"><button class="icon-btn mic ${player.speaking ? "talking" : ""}" data-id="${escapeHtml(player.id)}" title="Test talking">◉</button><button class="icon-btn edit" data-id="${escapeHtml(player.id)}" title="Edit player">✎</button></div>
             </div>`).join("") : `<div class="empty">No players yet</div>`}</div>
           </section>
@@ -624,7 +624,7 @@ function renderDashboard() {
         <div class="section-heading"><div><div class="eyebrow">Open invitation</div><h2>Player room</h2></div><button id="copy-join-room" class="btn primary">Copy invite link</button></div>
         <div class="room-callout"><div><span class="room-number">${session.onlineCount}</span><span>online now</span></div><p>Guests do not create accounts. They open your private link, choose PNG or webcam mode, and grant the required browser permissions.</p><button class="btn danger" type="button" data-reset-player-link>Reset player link for a new stream</button></div>
         <section class="card"><div class="card-head"><div><h2>Invitation link</h2><p class="subtle">Anyone with this link can join this overlay.</p></div></div><div class="copy-field"><input class="input mono" value="${escapeHtml(joinUrl)}" readonly /><button id="copy-join-room-2" class="btn">Copy</button></div></section>
-        <section class="card room-list"><div class="card-head"><div><h2>Room roster</h2><p class="subtle">Connected guests appear automatically.</p></div><span class="badge">${players.length} TOTAL</span></div><div class="player-list">${players.length ? players.map((player) => `<div class="player-row"><div class="player-meta"><div class="player-name">${escapeHtml(player.name)}</div><div class="player-id">${player.source === "browser" ? "Guest browser" : "Added by host"}</div></div><div class="row-actions"><button class="icon-btn edit" data-id="${escapeHtml(player.id)}" title="Edit player">✎</button></div></div>`).join("") : `<div class="empty">No players have joined yet.</div>`}</div></section>
+        <section class="card room-list"><div class="card-head"><div><h2>Room roster</h2><p class="subtle">Connected guests appear automatically.</p></div><span class="badge">${players.length} TOTAL</span></div><div class="player-list">${players.length ? players.map((player) => `<div class="player-row"><div class="player-meta"><div class="player-name">${escapeHtml(player.name)}</div><div class="player-id">${player.source === "browser" ? "Guest browser" : player.source === "discord" ? "Discord call" : "Added by host"}</div></div><div class="row-actions"><button class="icon-btn edit" data-id="${escapeHtml(player.id)}" title="Edit player">✎</button></div></div>`).join("") : `<div class="empty">No players have joined yet.</div>`}</div></section>
       </section>
       <section class="view-panel ${activeView === "settings" ? "active" : ""}" data-panel="settings">
         <div class="section-heading"><div><div class="eyebrow">Host controls</div><h2>Settings</h2></div></div>
@@ -632,12 +632,16 @@ function renderDashboard() {
           <section class="card stack"><div><h2>Room identity</h2><p class="subtle">Shown in the host dashboard and guest join page.</p></div><div class="field"><label>Room name</label><input class="input" name="name" value="${escapeHtml(session.name)}" maxlength="80" /></div></section>
           <section class="card stack"><div><h2>Overlay appearance</h2><p class="subtle">Choose how avatars and cameras are arranged in OBS.</p></div><div class="field"><label>Layout</label><select class="input" name="layout"><option value="row" ${session.layout === "row" ? "selected" : ""}>Horizontal row</option><option value="arc" ${session.layout === "arc" ? "selected" : ""}>Soft arc</option><option value="stack" ${session.layout === "stack" ? "selected" : ""}>Vertical stack</option></select></div><div class="field"><label>Preview background</label><select class="input" name="background"><option value="transparent" ${session.background === "transparent" ? "selected" : ""}>Transparent</option><option value="checker" ${session.background === "checker" ? "selected" : ""}>Checker</option><option value="dark" ${session.background === "dark" ? "selected" : ""}>Dark</option></select></div></section>
           <section class="card stack discord-card">
-            <div><h2>Discord connection</h2><p class="subtle">Configure Discord here, then connect the host account. Invite-link mode keeps working without Discord.</p></div>
+            <div><h2>Discord direct-call companion</h2><p class="subtle">Connect Discord, download the Windows companion, and pair it with this room. It reads the active call from Discord Desktop, including direct and group calls.</p></div>
             <div class="field"><label for="discord-callback">Redirect URL</label><div class="copy-field"><input id="discord-callback" class="input mono" value="${escapeHtml(discordConnection?.callbackUrl || `${origin}/auth/discord/callback`)}" readonly /><button id="copy-discord-callback" class="btn" type="button">Copy</button></div><span class="hint">Add this exact URL under OAuth2 Redirects in the Discord Developer Portal.</span></div>
             <div class="two-col"><div class="field"><label for="discord-client-id">Application client ID</label><input id="discord-client-id" class="input mono" inputmode="numeric" value="${escapeHtml(discordConnection?.clientId || "")}" placeholder="Discord client ID" /></div><div class="field"><label for="discord-client-secret">Client secret</label><input id="discord-client-secret" class="input" type="password" autocomplete="new-password" placeholder="${discordConnection?.configured ? "Leave blank to keep the saved secret" : "Discord client secret"}" /></div></div>
-            <p class="hint">The client secret is encrypted before it is stored in SQLite. It is never shown again. ${discordConnection?.source === "environment" ? "The current values come from the server environment. Saving here replaces them." : ""}</p>
-            ${discordConnection?.connected ? `<div class="connection-state"><span class="dot live"></span><span>Connected as <strong>${escapeHtml(discordConnection.connected.username)}</strong></span></div>` : ""}
-            <div class="discord-config-actions"><button id="save-discord-config" class="btn primary" type="button">Save Discord configuration</button>${discordConnection?.configured && !discordConnection?.connected ? `<a class="btn discord-btn" href="/auth/discord">Connect Discord account</a>` : ""}${discordConnection?.connected ? `<button id="disconnect-discord" class="btn ghost" type="button">Disconnect account</button>` : ""}${discordConnection?.source === "settings" ? `<button id="remove-discord-config" class="btn ghost danger" type="button">Remove configuration</button>` : ""}</div>
+            <p class="hint">The client secret and Discord tokens are encrypted in SQLite and never sent to the browser. Add your Discord account under the application testers while developing RPC access.</p>
+            ${discordConnection?.connected ? `<div class="connection-state"><span class="dot ${discordConnection.connected.rpcReady ? "live" : ""}"></span><span>Connected as <strong>${escapeHtml(discordConnection.connected.username)}</strong>${discordConnection.connected.rpcReady ? " with call access" : ", but call access still needs approval"}</span></div>` : ""}
+            <div class="discord-config-actions"><button id="save-discord-config" class="btn primary" type="button">Save Discord configuration</button>${discordConnection?.configured && (!discordConnection?.connected || !discordConnection.connected.rpcReady) ? `<a class="btn discord-btn" href="/auth/discord">${discordConnection?.connected ? "Reconnect for call access" : "Connect Discord account"}</a>` : ""}${discordConnection?.connected ? `<button id="disconnect-discord" class="btn ghost" type="button">Disconnect account</button>` : ""}${discordConnection?.source === "settings" ? `<button id="remove-discord-config" class="btn ghost danger" type="button">Remove configuration</button>` : ""}</div>
+            <div class="companion-panel">
+              <div><div class="eyebrow">Windows companion</div><h3>${session.companion?.online ? "Connected" : session.companion?.paired ? "Paired, waiting for the EXE" : "Not paired yet"}</h3><p class="subtle">${session.companion?.channelName ? `Following ${escapeHtml(session.companion.channelName)}.` : "Keep Discord Desktop and the companion running while streaming."}</p></div>
+              <div class="discord-config-actions"><a class="btn ghost" href="${escapeHtml(discordConnection?.companionDownloadUrl || session.companion?.downloadUrl || "#")}" download>Download Windows EXE</a>${discordConnection?.connected?.rpcReady ? `<button id="pair-discord-companion" class="btn primary" type="button">${session.companion?.paired ? "Create new pairing code" : "Create pairing code"}</button>` : ""}${session.companion?.paired ? `<button id="remove-discord-companion" class="btn ghost danger" type="button">Forget companion</button>` : ""}</div>
+            </div>
           </section>
           <div class="settings-actions"><button class="btn primary" type="submit">Save settings</button><button id="sign-out" class="btn ghost" type="button">Sign out</button></div>
         </form>
@@ -724,6 +728,21 @@ function renderDashboard() {
     discordConnection = await api("/api/discord/status");
     toast("Discord configuration removed");
     renderDashboard();
+  });
+  document.querySelector("#pair-discord-companion")?.addEventListener("click", async () => {
+    const result = await api(`/api/sessions/${session.id}/discord-companion/pair`, { method: "POST" });
+    const modal = document.createElement("div");
+    modal.className = "modal";
+    modal.innerHTML = `<section class="modal-card pairing-modal" role="dialog" aria-modal="true" aria-labelledby="pairing-title"><h2 id="pairing-title">Pair the Windows companion</h2><ol><li>Download and open PNGCalls-Companion.exe.</li><li>Enter <strong>${escapeHtml(origin)}</strong> as the PNGCalls address.</li><li>Paste the pairing code below. It is replaced whenever you create a new one.</li></ol><div class="copy-field"><input id="companion-pairing-code" class="input mono" value="${escapeHtml(result.pairingCode)}" readonly /><button id="copy-companion-code" class="btn primary" type="button">Copy code</button></div><p class="hint">Windows may warn that this unsigned personal application is not commonly downloaded. The source and build workflow are included in this repository.</p><div class="actions"><a class="btn ghost" href="${escapeHtml(result.downloadUrl)}" download>Download EXE</a><button id="close-pairing" class="btn" type="button">Done</button></div></section>`;
+    document.body.append(modal);
+    modal.querySelector("#copy-companion-code").onclick = () => navigator.clipboard.writeText(result.pairingCode).then(() => toast("Pairing code copied"));
+    modal.querySelector("#close-pairing").onclick = () => { modal.remove(); loadDashboard(); };
+  });
+  document.querySelector("#remove-discord-companion")?.addEventListener("click", async () => {
+    if (!confirm("Forget this companion and stop importing the current Discord call?")) return;
+    await api(`/api/sessions/${session.id}/discord-companion/pair`, { method: "DELETE" });
+    toast("Discord companion forgotten");
+    await loadDashboard();
   });
 }
 

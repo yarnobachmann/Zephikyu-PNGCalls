@@ -131,7 +131,7 @@ If the default camera is already being used by another application, PNGCalls sti
 
 On the first visit, Zeph asks whether the user wants a guided tour. The tour highlights the important controls for the current host or player screen. Choosing no, closing the tour, or finishing it keeps Zeph available in the lower-right corner with a help button. Tutorial completion is stored only in that browser.
 
-## Optional Discord connection
+## Discord direct-call companion
 
 Create an application in the Discord Developer Portal and add this redirect URL:
 
@@ -139,11 +139,34 @@ Create an application in the Discord Developer Portal and add this redirect URL:
 https://your-pngcalls-domain.example/auth/discord/callback
 ```
 
-Open the host Settings page and copy the displayed redirect URL into the Discord application's OAuth2 Redirects list. Enter the application's client ID and client secret in PNGCalls, save the configuration, and select Connect Discord account. The client secret is encrypted before it is stored in SQLite. Back up the `.credentials-key` file alongside the database because saved secrets cannot be decrypted without it.
+Open the host Settings page and copy the displayed redirect URL into the Discord application's OAuth2 Redirects list. Enter the application's client ID and client secret in PNGCalls, save the configuration, and select Connect Discord account. PNGCalls requests `identify`, `rpc`, and `rpc.voice.read` so the Windows companion can read direct calls, group calls, and server voice channels from Discord Desktop.
 
-Environment variables named `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, and `DISCORD_REDIRECT_URI` remain supported as a fallback for existing deployments. A configuration saved in Settings takes priority. The OAuth connection requests only the `identify` scope and stores the Discord user ID and display name. Access and refresh tokens are not stored.
+Discord limits RPC scopes to approved partners and configured application testers. Add the host Discord account as an application tester during development. Public use requires Discord approval. This restriction belongs to Discord and cannot be bypassed by PNGCalls.
 
-Discord account linking does not automatically read a normal Discord call. Discord desktop RPC requires an approved Discord application and a desktop integration. Invite links and browser microphone detection remain the supported no-install speaking workflow.
+After Discord is connected:
+
+1. Select **Download Windows EXE** in Settings.
+2. Select **Create pairing code**.
+3. Run `PNGCalls-Companion.exe` on the same Windows computer as Discord Desktop.
+4. Enter the PNGCalls address and paste the pairing code once.
+5. Keep the companion running while streaming. It reconnects automatically on later launches.
+
+Run `PNGCalls-Companion.exe --configure` to replace its saved server or pairing code. Pairing tokens are stored as hashes on the server and can be revoked from Settings. Discord client secrets and OAuth tokens are encrypted before storage in SQLite. Back up the `.credentials-key` file alongside the database because saved secrets cannot be decrypted without it.
+
+The companion uses Discord's local IPC interface. It sends the active call's participant names, mute state, and speaking state to the paired PNGCalls room. It does not transmit Discord audio. Invite links and browser microphone detection remain available without Discord.
+
+Environment variables named `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, and `DISCORD_REDIRECT_URI` remain supported as a fallback. A configuration saved in Settings takes priority.
+
+### Building the Windows companion
+
+On Windows with Node.js 22 installed:
+
+```powershell
+npm ci
+npm run build:companion
+```
+
+The EXE is written to `dist/PNGCalls-Companion.exe`. Pushing a version tag such as `v1.1.0` runs the release workflow and publishes that EXE as the dashboard download.
 
 ## Security scope
 
