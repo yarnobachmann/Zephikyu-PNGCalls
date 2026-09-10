@@ -115,9 +115,11 @@ Webcam mode captures camera frames in the guest browser, compresses them as JPEG
 1. Build the scene you want to show in OBS.
 2. Click **Start Virtual Camera** in OBS.
 3. Open the PNGCalls player invite link in Chrome or Edge and choose **Webcam**.
-4. Click **Find cameras**, select **OBS Virtual Camera**, check the preview, and join.
+4. Click **Find cameras** and select **OBS Virtual Camera**.
+5. Use **Zoom**, **Horizontal position**, and **Vertical position** to crop the full OBS scene down to the face camera.
+6. Check the 16:9 output preview and join.
 
-OBS Virtual Camera is exposed to the browser as a normal camera device. No OBS plugin or game mod is required. Camera device names become available only after the browser grants camera permission. The camera picker remembers the selected device in that guest's browser.
+OBS Virtual Camera is exposed to the browser as a normal camera device. No OBS plugin or game mod is required. Camera device names become available only after the browser grants camera permission. The camera picker and crop settings are remembered in that guest's browser.
 
 ## Optional Discord connection
 

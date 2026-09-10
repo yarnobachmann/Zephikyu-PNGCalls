@@ -11,6 +11,66 @@ let discordConnection = null;
 
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
+const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, Number(value)));
+function normalizeCrop(crop = {}) {
+  return {
+    zoom: clamp(crop.zoom || 1, 1, 8),
+    x: clamp(crop.x ?? 50, 0, 100),
+    y: clamp(crop.y ?? 50, 0, 100),
+  };
+}
+
+function drawCroppedFrame(video, canvas, cropValue) {
+  if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) return false;
+  const crop = normalizeCrop(cropValue);
+  const targetAspect = canvas.width / canvas.height;
+  const sourceAspect = video.videoWidth / video.videoHeight;
+  const baseWidth = sourceAspect > targetAspect ? video.videoHeight * targetAspect : video.videoWidth;
+  const baseHeight = sourceAspect > targetAspect ? video.videoHeight : video.videoWidth / targetAspect;
+  const sourceWidth = baseWidth / crop.zoom;
+  const sourceHeight = baseHeight / crop.zoom;
+  const sourceX = (video.videoWidth - sourceWidth) * (crop.x / 100);
+  const sourceY = (video.videoHeight - sourceHeight) * (crop.y / 100);
+  canvas.getContext("2d").drawImage(video, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+  return true;
+}
+
+function cropControlsMarkup(hidden = false) {
+  return `<div id="crop-controls" class="crop-controls" ${hidden ? "hidden" : ""}>
+    <div class="crop-heading"><strong>Crop camera</strong><button id="reset-crop" class="btn ghost compact" type="button">Reset</button></div>
+    <label for="crop-zoom"><span>Zoom</span><output id="crop-zoom-value">1.0x</output></label><input id="crop-zoom" name="cropZoom" type="range" min="1" max="8" step="0.1" value="1" />
+    <label for="crop-x"><span>Horizontal position</span><output id="crop-x-value">50%</output></label><input id="crop-x" name="cropX" type="range" min="0" max="100" step="1" value="50" />
+    <label for="crop-y"><span>Vertical position</span><output id="crop-y-value">50%</output></label><input id="crop-y" name="cropY" type="range" min="0" max="100" step="1" value="50" />
+  </div>`;
+}
+
+function bindCropControls(initialCrop = {}, onChange = () => {}) {
+  const crop = normalizeCrop(initialCrop);
+  const zoom = document.querySelector("#crop-zoom");
+  const x = document.querySelector("#crop-x");
+  const y = document.querySelector("#crop-y");
+  zoom.value = String(crop.zoom);
+  x.value = String(crop.x);
+  y.value = String(crop.y);
+  const current = () => normalizeCrop({ zoom: zoom.value, x: x.value, y: y.value });
+  const sync = () => {
+    const value = current();
+    document.querySelector("#crop-zoom-value").textContent = `${value.zoom.toFixed(1)}x`;
+    document.querySelector("#crop-x-value").textContent = `${value.x}%`;
+    document.querySelector("#crop-y-value").textContent = `${value.y}%`;
+    onChange(value);
+  };
+  [zoom, x, y].forEach((input) => { input.oninput = sync; });
+  document.querySelector("#reset-crop").onclick = () => {
+    zoom.value = "1";
+    x.value = "50";
+    y.value = "50";
+    sync();
+  };
+  sync();
+  return current;
+}
+
 function avatarMarkup(player) {
   const isWebcam = player.mediaMode === "webcam";
   const image = isWebcam ? player.webcamImage : player.speaking ? player.talkingImage || player.idleImage : player.idleImage;
@@ -298,8 +358,11 @@ async function runJoin() {
   const storageKey = `pngcalls.join.${id}`;
   let identity = JSON.parse(localStorage.getItem(storageKey) || "null");
   let cameraPreviewStream = null;
+  let cropPreviewAnimation = 0;
 
   const stopCameraPreview = () => {
+    cancelAnimationFrame(cropPreviewAnimation);
+    cropPreviewAnimation = 0;
     cameraPreviewStream?.getTracks().forEach((track) => track.stop());
     cameraPreviewStream = null;
   };
@@ -317,7 +380,9 @@ async function runJoin() {
           <div id="png-fields" class="two-col"><div class="field"><label>Idle image</label><input class="input" name="idle" type="file" required accept="image/png,image/jpeg,image/webp,image/gif" /></div><div class="field"><label>Talking image</label><input class="input" name="talking" type="file" required accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
           <section id="camera-fields" class="camera-picker" hidden>
             <div class="field"><label for="camera-device">Camera source</label><div class="camera-actions"><select id="camera-device" class="input" name="cameraDeviceId" disabled><option value="">Find cameras first</option></select><button id="find-cameras" class="btn ghost" type="button">Find cameras</button></div></div>
-            <video id="camera-test-preview" class="camera-preview" autoplay muted playsinline hidden></video>
+            <video id="camera-test-preview" autoplay muted playsinline hidden></video>
+            <canvas id="crop-test-preview" class="camera-preview" width="640" height="360" hidden></canvas>
+            ${cropControlsMarkup(true)}
             <p id="camera-status" class="hint">Start OBS Virtual Camera, then select it here. A normal webcam also works.</p>
           </section>
           <p id="webcam-note" class="hint" hidden>Your camera is shown as a low-frame-rate tile in OBS. PNGCalls replaces the latest frame and does not make a video recording.</p>
@@ -340,13 +405,22 @@ async function runJoin() {
     const cameraSelect = document.querySelector("#camera-device");
     const cameraStatus = document.querySelector("#camera-status");
     const cameraPreview = document.querySelector("#camera-test-preview");
+    const cropPreview = document.querySelector("#crop-test-preview");
+    const cropControls = document.querySelector("#crop-controls");
+    const currentCrop = bindCropControls();
+    const renderCropPreview = () => {
+      drawCroppedFrame(cameraPreview, cropPreview, currentCrop());
+      cropPreviewAnimation = requestAnimationFrame(renderCropPreview);
+    };
     const openCameraPreview = async (deviceId = "") => {
       stopCameraPreview();
       const video = deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 360 } } : true;
       cameraPreviewStream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
       cameraPreview.srcObject = cameraPreviewStream;
-      cameraPreview.hidden = false;
       await cameraPreview.play().catch(() => {});
+      cropPreview.hidden = false;
+      cropControls.hidden = false;
+      renderCropPreview();
     };
     document.querySelector("#find-cameras").onclick = async () => {
       cameraStatus.textContent = "Requesting camera access...";
@@ -362,7 +436,8 @@ async function runJoin() {
         cameraStatus.textContent = devices.length ? `${devices.length} camera source${devices.length === 1 ? "" : "s"} found.` : "No camera sources were found.";
       } catch (error) {
         stopCameraPreview();
-        cameraPreview.hidden = true;
+        cropPreview.hidden = true;
+        cropControls.hidden = true;
         cameraStatus.textContent = `Camera access failed: ${error.message}`;
       }
     };
@@ -383,7 +458,13 @@ async function runJoin() {
         const form = new FormData(event.currentTarget);
         const mediaMode = form.get("mediaMode");
         const joined = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ name: form.get("name"), accent: form.get("accent"), mediaMode }) });
-        identity = { playerId: joined.playerId, name: form.get("name"), mediaMode, cameraDeviceId: mediaMode === "webcam" ? form.get("cameraDeviceId") || "" : "" };
+        identity = {
+          playerId: joined.playerId,
+          name: form.get("name"),
+          mediaMode,
+          cameraDeviceId: mediaMode === "webcam" ? form.get("cameraDeviceId") || "" : "",
+          crop: mediaMode === "webcam" ? normalizeCrop({ zoom: form.get("cropZoom"), x: form.get("cropX"), y: form.get("cropY") }) : normalizeCrop(),
+        };
         localStorage.setItem(storageKey, JSON.stringify(identity));
         if (mediaMode === "png") {
           const images = new FormData();
@@ -406,6 +487,7 @@ async function runJoin() {
   try {
     const resumed = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ playerId: identity.playerId }) });
     identity.mediaMode = resumed.player?.mediaMode || identity.mediaMode || "png";
+    identity.crop = normalizeCrop(identity.crop);
     localStorage.setItem(storageKey, JSON.stringify(identity));
     await startMic(id, joinToken, identity, storageKey);
   } catch {
@@ -422,7 +504,7 @@ async function startMic(id, joinToken, identity, storageKey) {
     <div class="eyebrow">Connected as ${escapeHtml(identity.name)}</div>
     <h1>Keep this tab open</h1>
     <p class="join-copy">${useWebcam ? "Your camera frames go to this PNGCalls server while this tab stays open." : "You can minimize this window. Only your speaking status is sent to the overlay."}</p>
-    ${useWebcam ? `<video id="camera-preview" class="camera-preview" autoplay muted playsinline></video>` : ""}
+    ${useWebcam ? `<video id="camera-preview" autoplay muted playsinline hidden></video><canvas id="camera-output-preview" class="camera-preview" width="640" height="360"></canvas>${cropControlsMarkup()}` : ""}
     <div class="meter"><span id="meter-bar"></span></div>
     <div class="mic-state"><span class="dot live"></span><strong id="mic-label">Listening for your voice</strong></div>
     <button id="leave-room" class="btn ghost">Forget this room</button>
@@ -473,19 +555,25 @@ async function startMic(id, joinToken, identity, storageKey) {
 
   if (useWebcam) {
     const video = document.querySelector("#camera-preview");
+    const canvas = document.querySelector("#camera-output-preview");
     video.srcObject = stream;
     await video.play().catch(() => {});
-    const canvas = document.createElement("canvas");
     canvas.width = 640;
     canvas.height = 360;
+    let crop = normalizeCrop(identity.crop);
+    bindCropControls(crop, (value) => {
+      crop = value;
+      identity.crop = value;
+      localStorage.setItem(storageKey, JSON.stringify(identity));
+    });
+    const drawPreview = () => {
+      drawCroppedFrame(video, canvas, crop);
+      requestAnimationFrame(drawPreview);
+    };
+    drawPreview();
     let sendingFrame = false;
     setInterval(() => {
       if (sendingFrame || video.readyState < 2) return;
-      const width = video.videoWidth || 640;
-      const height = video.videoHeight || 360;
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext("2d").drawImage(video, 0, 0, width, height);
       sendingFrame = true;
       canvas.toBlob(async (blob) => {
         try {
