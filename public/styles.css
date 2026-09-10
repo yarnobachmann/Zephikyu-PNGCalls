@@ -177,9 +177,9 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .shelf-item:hover, .shelf-item:focus-visible { transform: translateY(-5px) rotate(-2deg) scale(1.08); filter: brightness(1.12); outline: 2px solid #ff637d; outline-offset: 3px; }
 .shelf-item:active { transform: translateY(1px) scale(.96); }
 .shelf-item.playing { animation: shelf-playing .34s ease-in-out infinite alternate; }
-.shelf-monster { top: 68px; right: 34px; width: 30px; height: 46px; }
+.shelf-monster { top: 80px; right: 34px; width: 30px; height: 46px; }
 .shelf-foxy { top: 55px; left: 52px; width: 38px; height: 49px; }
-.shelf-funko { left: 34px; bottom: 10px; width: 48px; height: 55px; }
+.shelf-funko { left: 8px; bottom: 5px; width: 65px; height: 74px; }
 .shelf-mimikyu { right: 24px; bottom: 47px; width: 58px; height: 40px; }
 .join-studio-shelf { margin: 0; }
 @keyframes shelf-playing { from { transform: rotate(-3deg) scale(1.04); } to { transform: rotate(3deg) scale(1.1); } }
