@@ -140,8 +140,8 @@ function parseCookies(req) {
 }
 
 const cookieSecure = (req) => req.secure || req.headers["x-forwarded-proto"] === "https";
-function setCookie(res, name, value, maxAge, secure, httpOnly = true) {
-  res.append("Set-Cookie", `${name}=${encodeURIComponent(value)}; SameSite=Strict; Path=/; Max-Age=${maxAge}${httpOnly ? "; HttpOnly" : ""}${secure ? "; Secure" : ""}`);
+function setCookie(res, name, value, maxAge, secure, httpOnly = true, sameSite = "Strict") {
+  res.append("Set-Cookie", `${name}=${encodeURIComponent(value)}; SameSite=${sameSite}; Path=/; Max-Age=${maxAge}${httpOnly ? "; HttpOnly" : ""}${secure ? "; Secure" : ""}`);
 }
 const ipHash = (req) => crypto.createHmac("sha256", auditSalt).update(String(req.ip || "unknown")).digest("hex").slice(0, 24);
 async function audit(req, action, outcome, target = null, actor = "host") {
@@ -184,7 +184,7 @@ async function issueHostSession(req, res) {
     id: hash(raw), csrfHash: hash(csrf), expiresAt: new Date(Date.now() + maxAge * 1000), ipHash: ipHash(req), userAgent: String(req.headers["user-agent"] || "").slice(0, 250),
   } });
   const secure = cookieSecure(req);
-  setCookie(res, "zephikyu_host", raw, maxAge, secure, true);
+  setCookie(res, "zephikyu_host", raw, maxAge, secure, true, "Lax");
   setCookie(res, "zephikyu_csrf", csrf, maxAge, secure, false);
   return csrf;
 }
@@ -351,7 +351,7 @@ app.post("/api/auth/logout", requireHost, requireCsrf, async (req, res) => {
   await prisma.hostSession.delete({ where: { id: req.hostContext.authSession.id } }).catch(() => {});
   await audit(req, "owner.logout", "success");
   const secure = cookieSecure(req);
-  setCookie(res, "zephikyu_host", "", 0, secure, true); setCookie(res, "zephikyu_csrf", "", 0, secure, false);
+  setCookie(res, "zephikyu_host", "", 0, secure, true, "Lax"); setCookie(res, "zephikyu_csrf", "", 0, secure, false);
   res.status(204).end();
 });
 

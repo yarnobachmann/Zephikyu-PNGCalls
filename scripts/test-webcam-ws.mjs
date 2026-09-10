@@ -47,6 +47,9 @@ try {
   });
   assert.equal(setupResponse.status, 201);
   const setup = await setupResponse.json();
+  const issuedCookies = setupResponse.headers.getSetCookie();
+  assert.match(issuedCookies.find((cookie) => cookie.startsWith("zephikyu_host=")), /SameSite=Lax/);
+  assert.match(issuedCookies.find((cookie) => cookie.startsWith("zephikyu_csrf=")), /SameSite=Strict/);
   const hostCookies = cookiesFrom(setupResponse);
 
   const discordSecret = "test-discord-secret-value-123456";
