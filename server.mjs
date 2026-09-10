@@ -464,7 +464,7 @@ app.use(express.static("public", {
   dotfiles: "deny",
   maxAge: "1h",
   setHeaders: (res, filePath) => {
-    if (path.extname(filePath) === ".html") res.set("Cache-Control", "no-store");
+    if ([".html", ".js", ".css"].includes(path.extname(filePath))) res.set("Cache-Control", "no-store");
   },
 }));
 app.get(["/overlay/:sessionId/:overlayToken", "/join/:sessionId/:joinToken", "/setup", "/"], (_req, res) => {
