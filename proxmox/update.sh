@@ -5,9 +5,13 @@ REPO="yarnobachmann/Zephikyu-PNGCalls"
 APP_DIR="/opt/pngcalls"
 NEXT_DIR="/opt/pngcalls.next"
 OLD_DIR="/opt/pngcalls.previous"
+NODE_BIN="/usr/local/lib/nodejs/bin/node"
+NPM_CLI="/usr/local/lib/nodejs/lib/node_modules/npm/bin/npm-cli.js"
+NPX_CLI="/usr/local/lib/nodejs/lib/node_modules/npm/bin/npx-cli.js"
 
 [[ "${EUID}" -eq 0 ]] || { echo "Run as root inside the PNGCalls LXC." >&2; exit 1; }
 [[ -f /etc/systemd/system/pngcalls.service ]] || { echo "No native PNGCalls installation was found." >&2; exit 1; }
+[[ -x "${NODE_BIN}" && -f "${NPM_CLI}" && -f "${NPX_CLI}" ]] || { echo "The Node.js installation is incomplete." >&2; exit 1; }
 
 temp_dir="$(mktemp -d)"
 trap 'rm -rf "${temp_dir}"' EXIT
@@ -16,9 +20,9 @@ rm -rf "${NEXT_DIR}"
 install -d -m 0755 "${NEXT_DIR}"
 tar -xzf "${temp_dir}/source.tar.gz" -C "${NEXT_DIR}" --strip-components=1
 cd "${NEXT_DIR}"
-npm ci
-npx prisma generate
-npm prune --omit=dev
+"${NODE_BIN}" "${NPM_CLI}" ci
+"${NODE_BIN}" "${NPX_CLI}" prisma generate
+"${NODE_BIN}" "${NPM_CLI}" prune --omit=dev
 chown -R root:root "${NEXT_DIR}"
 
 systemctl stop pngcalls

@@ -31,6 +31,13 @@ tar -xJf "${temp_dir}/${node_archive}" -C /usr/local/lib/nodejs --strip-componen
 ln -sfn /usr/local/lib/nodejs/bin/node /usr/local/bin/node
 ln -sfn /usr/local/lib/nodejs/bin/npm /usr/local/bin/npm
 ln -sfn /usr/local/lib/nodejs/bin/npx /usr/local/bin/npx
+NODE_BIN="/usr/local/lib/nodejs/bin/node"
+NPM_CLI="/usr/local/lib/nodejs/lib/node_modules/npm/bin/npm-cli.js"
+NPX_CLI="/usr/local/lib/nodejs/lib/node_modules/npm/bin/npx-cli.js"
+[[ -x "${NODE_BIN}" && -f "${NPM_CLI}" && -f "${NPX_CLI}" ]] || {
+  echo "The Node.js installation is incomplete." >&2
+  exit 1
+}
 
 id pngcalls >/dev/null 2>&1 || useradd --system --home "${STATE_DIR}" --shell /usr/sbin/nologin pngcalls
 install -d -m 0750 -o pngcalls -g pngcalls "${STATE_DIR}/data" "${STATE_DIR}/uploads"
@@ -41,9 +48,9 @@ rm -rf "${APP_DIR}"
 install -d -m 0755 "${APP_DIR}"
 tar -xzf "${temp_dir}/source.tar.gz" -C "${APP_DIR}" --strip-components=1
 cd "${APP_DIR}"
-npm ci
-npx prisma generate
-npm prune --omit=dev
+"${NODE_BIN}" "${NPM_CLI}" ci
+"${NODE_BIN}" "${NPX_CLI}" prisma generate
+"${NODE_BIN}" "${NPM_CLI}" prune --omit=dev
 chown -R root:root "${APP_DIR}"
 
 if [[ -n "${DOMAIN}" ]]; then
@@ -82,7 +89,7 @@ User=pngcalls
 Group=pngcalls
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${CONFIG_DIR}/pngcalls.env
-ExecStart=/usr/local/bin/npm start
+ExecStart=${NODE_BIN} ${NPM_CLI} start
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
