@@ -104,6 +104,8 @@ Set `PUBLIC_URL` in `compose.yaml` to the HTTPS address that players and OBS can
 
 The join page uses the browser Web Audio API to calculate microphone loudness on the player's device. It sends a small heartbeat containing only the participant ID and whether that participant is speaking. The overlay receives updates through Server-Sent Events.
 
+Players can optionally animate their avatar or webcam tile while speaking. Available styles are bounce, pulse, shake, and glow. The host can change the animation later from the player editor. Reduced-motion browser and OBS preferences disable these animations automatically.
+
 This approach is game-neutral. It cannot automatically read the roster inside a game because browsers are not allowed to inspect another program. Players instead join through the shared room link, which is the no-mod and no-install option.
 
 ## Webcam mode

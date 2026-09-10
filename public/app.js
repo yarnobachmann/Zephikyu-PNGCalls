@@ -74,7 +74,8 @@ function bindCropControls(initialCrop = {}, onChange = () => {}) {
 function avatarMarkup(player) {
   const isWebcam = player.mediaMode === "webcam";
   const image = isWebcam ? player.webcamImage : player.speaking ? player.talkingImage || player.idleImage : player.idleImage;
-  return `<article class="avatar ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)}">
+  const animation = ["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none";
+  return `<article class="avatar ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)}">
     ${image ? `<img class="avatar-img ${isWebcam ? "webcam-img" : ""}" src="${escapeHtml(image)}${isWebcam ? `?v=${Date.now()}` : ""}" ${isWebcam ? `data-webcam-src="${escapeHtml(image)}"` : ""} alt="${isWebcam ? `${escapeHtml(player.name)} webcam` : ""}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}
     <div class="avatar-name">${escapeHtml(player.name)}</div>
   </article>`;
@@ -296,16 +297,22 @@ function showPlayerModal(player = null) {
     <div class="field"><label>Display name</label><input name="name" class="input" required value="${escapeHtml(player?.name || "")}" placeholder="Player name" /></div>
     <div class="two-col"><div class="field"><label>Idle image</label><input name="idle" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div><div class="field"><label>Talking image</label><input name="talking" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
     <div class="field"><label>Speaking accent</label><input name="accent" class="input" type="color" value="${escapeHtml(player?.accent || "#d0193c")}" /></div>
+    <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" ${player?.speakingAnimation && player.speakingAnimation !== "none" ? "checked" : ""} /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input"><option value="bounce" ${player?.speakingAnimation === "bounce" ? "selected" : ""}>Bounce</option><option value="pulse" ${player?.speakingAnimation === "pulse" ? "selected" : ""}>Pulse</option><option value="shake" ${player?.speakingAnimation === "shake" ? "selected" : ""}>Shake</option><option value="glow" ${player?.speakingAnimation === "glow" ? "selected" : ""}>Glow</option></select></div></div>
     <div class="actions"><button class="btn primary" type="submit">Save player</button><button class="btn ghost" type="button" id="cancel-modal">Cancel</button>${player ? `<button class="btn ghost danger" type="button" id="delete-player">Remove</button>` : ""}</div>
   </form>`;
   document.body.append(modal);
   document.querySelector("#cancel-modal").onclick = () => modal.remove();
+  const animationToggle = document.querySelector("#animate-speaking");
+  const animationSelect = document.querySelector("#speaking-animation");
+  const syncAnimationControl = () => { animationSelect.disabled = !animationToggle.checked; };
+  animationToggle.onchange = syncAnimationControl;
+  syncAnimationControl();
   modal.addEventListener("click", (event) => { if (event.target === modal) modal.remove(); });
   document.querySelector("#player-form").onsubmit = async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const id = form.get("id");
-    await api(`/api/sessions/${session.id}/players/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ name: form.get("name"), accent: form.get("accent"), pinned: true }) });
+    await api(`/api/sessions/${session.id}/players/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ name: form.get("name"), accent: form.get("accent"), pinned: true, speakingAnimation: form.get("animateSpeaking") ? form.get("speakingAnimation") : "none" }) });
     if (form.get("idle")?.size || form.get("talking")?.size) {
       const images = new FormData();
       if (form.get("idle")?.size) images.append("idle", form.get("idle"));
@@ -387,6 +394,7 @@ async function runJoin() {
           </section>
           <p id="webcam-note" class="hint" hidden>Your camera is shown as a low-frame-rate tile in OBS. PNGCalls replaces the latest frame and does not make a video recording.</p>
           <div class="field"><label>Speaking accent</label><input class="input" name="accent" type="color" value="#d0193c" /></div>
+          <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input" disabled><option value="bounce">Bounce</option><option value="pulse">Pulse</option><option value="shake">Shake</option><option value="glow">Glow</option></select></div></div>
           <button class="btn primary" type="submit">Join and enable microphone</button>
         </form>
       </section>
@@ -402,6 +410,9 @@ async function runJoin() {
     };
     modeSelect.onchange = syncMode;
     syncMode();
+    const animationToggle = document.querySelector("#animate-speaking");
+    const animationSelect = document.querySelector("#speaking-animation");
+    animationToggle.onchange = () => { animationSelect.disabled = !animationToggle.checked; };
     const cameraSelect = document.querySelector("#camera-device");
     const cameraStatus = document.querySelector("#camera-status");
     const cameraPreview = document.querySelector("#camera-test-preview");
@@ -457,7 +468,8 @@ async function runJoin() {
       try {
         const form = new FormData(event.currentTarget);
         const mediaMode = form.get("mediaMode");
-        const joined = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ name: form.get("name"), accent: form.get("accent"), mediaMode }) });
+        const speakingAnimation = form.get("animateSpeaking") ? form.get("speakingAnimation") : "none";
+        const joined = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ name: form.get("name"), accent: form.get("accent"), mediaMode, speakingAnimation }) });
         identity = {
           playerId: joined.playerId,
           name: form.get("name"),
@@ -624,6 +636,8 @@ async function runOverlay() {
     [...stage.querySelectorAll(".avatar")].forEach((avatar, index) => {
       const player = data.players[index];
       avatar.classList.toggle("speaking", Boolean(player.speaking));
+      avatar.classList.remove("animation-none", "animation-bounce", "animation-pulse", "animation-shake", "animation-glow");
+      avatar.classList.add(`animation-${["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none"}`);
       avatar.style.setProperty("--accent", player.accent);
       avatar.querySelector(".avatar-name").textContent = player.name;
       if (player.mediaMode !== "webcam") {

@@ -105,6 +105,18 @@ h1 { margin: 5px 0 0; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -.065
 .crop-controls output { color: var(--ink); font-variant-numeric: tabular-nums; }
 .crop-controls input[type="range"] { width: 100%; accent-color: var(--acid); }
 .btn.compact { min-height: 32px; padding: 6px 10px; }
+.animation-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, .8fr); gap: 12px; align-items: end; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #080305; }
+.check-row { min-height: 44px; display: flex; align-items: center; gap: 10px; color: var(--ink); cursor: pointer; }
+.check-row input { width: 18px; height: 18px; accent-color: var(--acid); }
+.avatar.speaking.animation-bounce .avatar-img, .avatar.speaking.animation-bounce .avatar-fallback { animation: speaking-bounce .48s ease-in-out infinite alternate; }
+.avatar.speaking.animation-pulse .avatar-img, .avatar.speaking.animation-pulse .avatar-fallback { animation: speaking-pulse .7s ease-in-out infinite alternate; }
+.avatar.speaking.animation-shake .avatar-img, .avatar.speaking.animation-shake .avatar-fallback { animation: speaking-shake .16s linear infinite; }
+.avatar.speaking.animation-glow .avatar-img, .avatar.speaking.animation-glow .avatar-fallback { animation: speaking-glow .75s ease-in-out infinite alternate; }
+@keyframes speaking-bounce { from { transform: translateY(0); } to { transform: translateY(-18px); } }
+@keyframes speaking-pulse { from { transform: scale(1); } to { transform: scale(1.055); } }
+@keyframes speaking-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-1.5deg); } 75% { transform: rotate(1.5deg); } }
+@keyframes speaking-glow { from { filter: drop-shadow(0 18px 28px #0008); } to { filter: drop-shadow(0 0 24px var(--accent)); } }
+@media (prefers-reduced-motion: reduce) { .avatar.speaking .avatar-img, .avatar.speaking .avatar-fallback { animation: none !important; } }
 .meter { width: 100%; height: 16px; background: #090b08; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; margin: 34px 0 18px; }
 .meter span { display: block; width: 100%; height: 100%; transform: scaleX(0); transform-origin: left; background: linear-gradient(90deg, var(--cyan), var(--acid)); transition: transform .06s linear; }
 .mic-state { display: flex; justify-content: center; align-items: center; gap: 9px; margin-bottom: 34px; }
@@ -187,5 +199,6 @@ h1 { margin: 5px 0 0; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -.065
   .avatar { min-width: 100px; }
   .avatar-img { height: 200px; }
   .two-col { grid-template-columns: 1fr; }
+  .animation-controls { grid-template-columns: 1fr; }
   .room-callout { grid-template-columns: 1fr; }
 }

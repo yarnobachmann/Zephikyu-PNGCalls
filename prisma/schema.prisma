@@ -37,17 +37,18 @@ model Room {
 }
 
 model Player {
-  id           String    @id
-  roomId       String
-  name         String
-  accent       String    @default("#d0193c")
-  pinned       Boolean   @default(false)
-  joinKey      String?
-  idleImage    String?
-  talkingImage String?
-  mediaMode    String    @default("png")
-  room         Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  presence     Presence?
+  id                String    @id
+  roomId            String
+  name              String
+  accent            String    @default("#d0193c")
+  pinned            Boolean   @default(false)
+  joinKey           String?
+  idleImage         String?
+  talkingImage      String?
+  mediaMode         String    @default("png")
+  speakingAnimation String    @default("none")
+  room              Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  presence          Presence?
 
   @@index([roomId])
 }
