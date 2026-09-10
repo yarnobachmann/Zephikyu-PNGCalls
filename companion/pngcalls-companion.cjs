@@ -14,7 +14,7 @@ const log = (message) => console.log(`[PNGCalls] ${message}`);
 async function configure() {
   const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
   console.log("Zephikyu PNGCalls Discord Companion\n");
-  console.log("In the PNGCalls host dashboard, open Settings, connect Discord, then press Create pairing code.");
+  console.log("First-time setup only. In the PNGCalls host dashboard, open Settings, connect Discord, then create the one-time pairing.");
   const serverUrl = (await prompt.question("PNGCalls address [https://pngcalls.yarnobachmann.nl]: ")).trim() || "https://pngcalls.yarnobachmann.nl";
   const pairingCode = (await prompt.question("Pairing code: ")).trim();
   prompt.close();
@@ -129,7 +129,7 @@ class DiscordRpc {
   }
 }
 
-async function runDiscord(clientId, accessToken, send) {
+async function runDiscord(clientId, accessToken, send, serverClosed) {
   const rpc = await new DiscordRpc(clientId, accessToken).connect();
   log("Connected to Discord Desktop.");
   let channel = null;
@@ -176,9 +176,13 @@ async function runDiscord(clientId, accessToken, send) {
 
   await refresh();
   const poll = setInterval(() => refresh().catch((error) => log(error.message)), 3000);
-  await new Promise((resolve) => rpc.socket.once("close", resolve));
+  const reason = await Promise.race([
+    new Promise((resolve) => rpc.socket.once("close", () => resolve("Discord Desktop disconnected."))),
+    serverClosed.then(() => "PNGCalls server disconnected."),
+  ]);
   clearInterval(poll);
-  throw new Error("Discord Desktop disconnected.");
+  if (!rpc.socket.destroyed) rpc.socket.destroy();
+  throw new Error(reason);
 }
 
 async function connect(config) {
@@ -192,6 +196,7 @@ async function connect(config) {
     socket.addEventListener("open", () => { clearTimeout(timeout); resolve(); }, { once: true });
     socket.addEventListener("error", () => { clearTimeout(timeout); reject(new Error("Could not connect to PNGCalls.")); }, { once: true });
   });
+  const serverClosed = new Promise((resolve) => socket.addEventListener("close", resolve, { once: true }));
   socket.send(JSON.stringify({ type: "pair", roomId: config.roomId, token: config.token }));
   const credentials = await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("PNGCalls did not accept the pairing code.")), 10_000);
@@ -205,14 +210,14 @@ async function connect(config) {
   log("Paired with PNGCalls.");
   const send = (payload) => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload)); };
   const heartbeat = setInterval(() => send({ type: "heartbeat" }), 5000);
-  try { await runDiscord(credentials.clientId, credentials.accessToken, send); }
+  try { await runDiscord(credentials.clientId, credentials.accessToken, send, serverClosed); }
   finally { clearInterval(heartbeat); socket.close(); }
 }
 
 async function main() {
   let config = loadConfig();
   if (!config) config = await configure();
-  log("Keep this window open while streaming. You can launch this EXE with OBS.");
+  log("Setup is saved. Future launches reconnect automatically, including when started with OBS.");
   while (true) {
     try { await connect(config); }
     catch (error) { log(error.message); }

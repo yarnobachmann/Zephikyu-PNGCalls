@@ -162,6 +162,23 @@ try {
   assert.equal(placedOverlayPlayer.positionY, 64);
   assert.equal(placedOverlayPlayer.displaySize, 1.4);
 
+  const automaticResetResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/placements`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
+    body: JSON.stringify({ reset: true }),
+  });
+  assert.equal(automaticResetResponse.status, 200);
+  const stackLayoutResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
+    body: JSON.stringify({ layout: "stack" }),
+  });
+  assert.equal(stackLayoutResponse.status, 200);
+  const automaticOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
+  assert.equal(automaticOverlay.layout, "stack");
+  assert.equal(automaticOverlay.players.find((player) => player.id === participant.playerId).positionX, null);
+  assert.equal(automaticOverlay.players.find((player) => player.id === participant.playerId).displaySize, 1);
+
   viewer = await openSocket(`${socketUrl}/ws/view/${room.sessionId}/${room.overlayToken}/${participant.playerId}`);
   publisher = await openSocket(`${socketUrl}/ws/publish/${room.sessionId}/${room.joinToken}/${participant.playerId}`, guestCookie);
   const received = new Promise((resolve, reject) => {

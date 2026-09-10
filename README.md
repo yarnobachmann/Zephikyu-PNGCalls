@@ -94,6 +94,10 @@ The previous `data/state.json` file is imported once when the SQLite database is
 
 The player link lets people add themselves to the room. The OBS link is read-only. Treat both links as private.
 
+### Arranging the OBS overlay
+
+Select **Arrange players** in the live preview, then drag a player to position it. Select a player and use Smaller, Larger, or the size slider to resize it. The corner handle also supports diagonal resizing. Positions and sizes are saved as percentages and applied to the OBS browser source. Choosing Horizontal row, Soft arc, or Vertical stack clears the custom arrangement and immediately returns both preview and OBS to that automatic layout.
+
 ## Internet hosting
 
 Microphone and webcam permission require HTTPS unless the site is running on localhost. For an internet-facing installation, put Zephikyu PNGCalls behind an HTTPS reverse proxy such as Caddy, Traefik, or nginx. Do not expose port 4173 directly without a reverse proxy and firewall rules.
@@ -155,6 +159,8 @@ Run `PNGCalls-Companion.exe --configure` to replace its saved server or pairing 
 
 The companion uses Discord's local IPC interface. It sends the active call's participant names, mute state, and speaking state to the paired PNGCalls room. It does not transmit Discord audio. Invite links and browser microphone detection remain available without Discord.
 
+Discord's browser RPC transport is deprecated and only available to applications that participated in its old private beta. A newly created self-hosted Discord application therefore cannot copy Reactive's browser-only connection. OAuth grants the requested account permissions, but it does not grant access to that deprecated browser transport. The native IPC companion is the supported route for existing Discord direct and group calls.
+
 Environment variables named `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, and `DISCORD_REDIRECT_URI` remain supported as a fallback. A configuration saved in Settings takes priority.
 
 ### Building the Windows companion
@@ -166,7 +172,7 @@ npm ci
 npm run build:companion
 ```
 
-The EXE is written to `dist/PNGCalls-Companion.exe`. Pushing a version tag such as `v1.1.0` runs the release workflow and publishes that EXE as the dashboard download.
+The EXE is written to `dist/PNGCalls-Companion.exe`. Pushing a version tag such as `v1.1.1` runs the release workflow and publishes that EXE as the dashboard download.
 
 ## Security scope
 

@@ -10,6 +10,7 @@ let csrfToken = null;
 let discordConnection = null;
 let dashboardEvents = null;
 let placementEditing = false;
+let selectedPlacementId = null;
 
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
@@ -479,6 +480,7 @@ function bindPlacementEditor() {
   editButton.onclick = async () => {
     if (placementEditing) {
       placementEditing = false;
+      selectedPlacementId = null;
       renderDashboard();
       return;
     }
@@ -492,6 +494,7 @@ function bindPlacementEditor() {
       player.displaySize = player.displaySize || 1;
       player.displayLayer = index;
     });
+    selectedPlacementId = session.players[0]?.id || null;
     placementEditing = true;
     const players = [...session.players];
     renderDashboard();
@@ -506,6 +509,7 @@ function bindPlacementEditor() {
       await api(`/api/sessions/${session.id}/placements`, { method: "PUT", body: JSON.stringify({ reset: true }) });
       session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0 }));
       placementEditing = false;
+      selectedPlacementId = null;
       renderDashboard();
       toast("Automatic layout restored");
     } catch (error) {
@@ -515,6 +519,33 @@ function bindPlacementEditor() {
   };
 
   if (!placementEditing) return;
+  const sizeInput = document.querySelector("#placement-size");
+  const sizeOutput = document.querySelector("#placement-size-output");
+  const selectedName = document.querySelector("#selected-placement-name");
+  const selectedPlayer = () => session.players.find((entry) => entry.id === selectedPlacementId) || session.players[0];
+  const syncSizeControls = () => {
+    const player = selectedPlayer();
+    if (!player || !sizeInput || !sizeOutput || !selectedName) return;
+    selectedPlacementId = player.id;
+    sizeInput.value = String(clamp(player.displaySize || 1, 0.4, 2.5));
+    sizeOutput.textContent = `${Math.round(Number(sizeInput.value) * 100)}%`;
+    selectedName.textContent = `Resize ${player.name}`;
+    preview.querySelectorAll(".avatar").forEach((entry) => entry.classList.toggle("placement-selected", entry.dataset.playerId === player.id));
+  };
+  const setSelectedSize = (size, save = false) => {
+    const player = selectedPlayer();
+    if (!player) return;
+    player.displaySize = clamp(size, 0.4, 2.5);
+    preview.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`)?.style.setProperty("--size", player.displaySize);
+    syncSizeControls();
+    if (save) savePlacements([player]).catch((error) => toast(error.message));
+  };
+  if (sizeInput) {
+    sizeInput.oninput = () => setSelectedSize(sizeInput.value);
+    sizeInput.onchange = () => setSelectedSize(sizeInput.value, true);
+  }
+  document.querySelector("#placement-smaller")?.addEventListener("click", () => setSelectedSize((selectedPlayer()?.displaySize || 1) - 0.1, true));
+  document.querySelector("#placement-larger")?.addEventListener("click", () => setSelectedSize((selectedPlayer()?.displaySize || 1) + 0.1, true));
   preview.querySelectorAll(".avatar").forEach((avatar) => {
     const player = session.players.find((entry) => entry.id === avatar.dataset.playerId);
     if (!player) return;
@@ -529,12 +560,17 @@ function bindPlacementEditor() {
       const initialX = clamp(player.positionX ?? 50, 0, 100);
       const initialY = clamp(player.positionY ?? 50, 0, 100);
       const initialSize = clamp(player.displaySize || 1, 0.4, 2.5);
+      selectedPlacementId = player.id;
+      syncSizeControls();
       player.displayLayer = Math.min(1000, Math.max(0, ...session.players.map((entry) => entry.displayLayer || 0)) + 1);
       avatar.classList.add("dragging", "custom-position");
       avatar.setPointerCapture(event.pointerId);
       const move = (moveEvent) => {
         if (resizing) {
-          player.displaySize = clamp(initialSize + (moveEvent.clientX - startX) / 160, 0.4, 2.5);
+          const resizeDistance = ((moveEvent.clientX - startX) + (moveEvent.clientY - startY)) / 2;
+          player.displaySize = clamp(initialSize + resizeDistance / 140, 0.4, 2.5);
+          if (sizeInput) sizeInput.value = String(player.displaySize);
+          if (sizeOutput) sizeOutput.textContent = `${Math.round(player.displaySize * 100)}%`;
         } else {
           player.positionX = clamp(initialX + ((moveEvent.clientX - startX) / previewRect.width) * 100, 0, 100);
           player.positionY = clamp(initialY + ((moveEvent.clientY - startY) / previewRect.height) * 100, 0, 100);
@@ -566,6 +602,19 @@ function bindPlacementEditor() {
       savePlacements([player]).catch((error) => toast(error.message));
     };
   });
+  syncSizeControls();
+}
+
+async function chooseAutomaticLayout(layout) {
+  await api(`/api/sessions/${session.id}/placements`, { method: "PUT", body: JSON.stringify({ reset: true }) });
+  const secrets = { joinToken: session.joinToken, overlayToken: session.overlayToken };
+  session = await api(`/api/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ layout }) });
+  Object.assign(session, secrets);
+  session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0 }));
+  placementEditing = false;
+  selectedPlacementId = null;
+  renderDashboard();
+  toast(`${layout[0].toUpperCase()}${layout.slice(1)} layout applied to preview and OBS`);
 }
 
 function renderDashboard() {
@@ -577,6 +626,7 @@ function renderDashboard() {
   const overlayUrl = `${origin}/overlay/${session.id}/${session.overlayToken}`;
   const joinUrl = `${origin}/join/${session.id}/${session.joinToken}`;
   const players = session.players || [];
+  const customArrangement = hasCustomPlacement(players);
   app.innerHTML = `<div class="shell">
     <aside class="rail">
       ${brandMarkup()}
@@ -592,8 +642,9 @@ function renderDashboard() {
       <section class="view-panel ${activeView === "overlay" ? "active" : ""}" data-panel="overlay"><div class="grid">
         <section class="card">
           <div class="card-head"><div><h2>Live preview</h2><p class="subtle">This now follows the same live feed as OBS.</p></div><span id="live-count-badge" class="badge ${session.onlineCount ? "live" : ""}">${session.onlineCount ? `${session.onlineCount} ONLINE` : "PREVIEW"}</span></div>
-          <div class="placement-toolbar"><button id="edit-placement" class="btn ${placementEditing ? "primary" : "ghost"}" type="button">${placementEditing ? "Done arranging" : "Arrange players"}</button><button id="reset-placement" class="btn ghost" type="button" ${hasCustomPlacement(players) ? "" : "hidden"}>Reset arrangement</button><span>${placementEditing ? "Drag to move and bring forward. Drag the corner handle to resize." : "Positions are shared with the OBS browser source."}</span></div>
-          <div id="live-preview" class="preview ${escapeHtml(session.background)} ${hasCustomPlacement(players) ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
+          <div class="placement-toolbar"><button id="edit-placement" class="btn ${placementEditing ? "primary" : "ghost"}" type="button">${placementEditing ? "Done arranging" : "Arrange players"}</button><button id="reset-placement" class="btn ghost" type="button" ${customArrangement ? "" : "hidden"}>Reset arrangement</button><span>${placementEditing ? "Drag players to move them. Select one and use the size controls." : "Positions are shared with the OBS browser source."}</span></div>
+          ${placementEditing && players.length ? `<div class="placement-size-controls"><strong id="selected-placement-name">Resize player</strong><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div>` : ""}
+          <div id="live-preview" class="preview ${escapeHtml(session.background)} ${customArrangement ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
           <div class="game-strip"><span>Works with</span><strong>R.E.P.O.</strong><strong>PEAK</strong><strong>Meccha Chameleon</strong><strong>Any game</strong></div>
         </section>
         <div class="stack">
@@ -616,7 +667,7 @@ function renderDashboard() {
             <div class="copy-field"><input class="input mono" value="${escapeHtml(overlayUrl)}" readonly /><button id="copy-overlay" class="btn">Copy</button></div>
             <p class="hint">Recommended size: 1920 × 1080. The background is transparent in OBS.</p>
             <div class="divider"></div>
-            <div class="field"><label>Layout</label><select id="layout" class="input"><option value="row" ${session.layout === "row" ? "selected" : ""}>Horizontal row</option><option value="arc" ${session.layout === "arc" ? "selected" : ""}>Soft arc</option><option value="stack" ${session.layout === "stack" ? "selected" : ""}>Vertical stack</option></select></div>
+            <div class="field"><label>Automatic layout</label><select id="layout" class="input">${customArrangement ? `<option value="" selected disabled>Custom arrangement</option>` : ""}<option value="row" ${!customArrangement && session.layout === "row" ? "selected" : ""}>Horizontal row</option><option value="arc" ${!customArrangement && session.layout === "arc" ? "selected" : ""}>Soft arc</option><option value="stack" ${!customArrangement && session.layout === "stack" ? "selected" : ""}>Vertical stack</option></select><span class="hint">Choosing one clears the custom arrangement and updates the OBS source.</span></div>
           </section>
         </div>
       </div></section>
@@ -630,17 +681,17 @@ function renderDashboard() {
         <div class="section-heading"><div><div class="eyebrow">Host controls</div><h2>Settings</h2></div></div>
         <form id="settings-form" class="settings-grid">
           <section class="card stack"><div><h2>Room identity</h2><p class="subtle">Shown in the host dashboard and guest join page.</p></div><div class="field"><label>Room name</label><input class="input" name="name" value="${escapeHtml(session.name)}" maxlength="80" /></div></section>
-          <section class="card stack"><div><h2>Overlay appearance</h2><p class="subtle">Choose how avatars and cameras are arranged in OBS.</p></div><div class="field"><label>Layout</label><select class="input" name="layout"><option value="row" ${session.layout === "row" ? "selected" : ""}>Horizontal row</option><option value="arc" ${session.layout === "arc" ? "selected" : ""}>Soft arc</option><option value="stack" ${session.layout === "stack" ? "selected" : ""}>Vertical stack</option></select></div><div class="field"><label>Preview background</label><select class="input" name="background"><option value="transparent" ${session.background === "transparent" ? "selected" : ""}>Transparent</option><option value="checker" ${session.background === "checker" ? "selected" : ""}>Checker</option><option value="dark" ${session.background === "dark" ? "selected" : ""}>Dark</option></select></div></section>
+          <section class="card stack"><div><h2>Overlay appearance</h2><p class="subtle">Choose how avatars and cameras are arranged in OBS.</p></div><div class="field"><label>Layout</label><select class="input" name="layout">${customArrangement ? `<option value="" selected disabled>Custom arrangement</option>` : ""}<option value="row" ${!customArrangement && session.layout === "row" ? "selected" : ""}>Horizontal row</option><option value="arc" ${!customArrangement && session.layout === "arc" ? "selected" : ""}>Soft arc</option><option value="stack" ${!customArrangement && session.layout === "stack" ? "selected" : ""}>Vertical stack</option></select><span class="hint">Choosing an automatic layout clears saved custom positions.</span></div><div class="field"><label>Preview background</label><select class="input" name="background"><option value="transparent" ${session.background === "transparent" ? "selected" : ""}>Transparent</option><option value="checker" ${session.background === "checker" ? "selected" : ""}>Checker</option><option value="dark" ${session.background === "dark" ? "selected" : ""}>Dark</option></select></div></section>
           <section class="card stack discord-card">
-            <div><h2>Discord direct-call companion</h2><p class="subtle">Connect Discord, download the Windows companion, and pair it with this room. It reads the active call from Discord Desktop, including direct and group calls.</p></div>
+            <div><h2>Discord direct-call companion</h2><p class="subtle">Connect Discord, download the Windows companion, and pair it once with this room. Later launches reconnect automatically. It reads direct calls, group calls, and server voice channels from Discord Desktop.</p></div>
             <div class="field"><label for="discord-callback">Redirect URL</label><div class="copy-field"><input id="discord-callback" class="input mono" value="${escapeHtml(discordConnection?.callbackUrl || `${origin}/auth/discord/callback`)}" readonly /><button id="copy-discord-callback" class="btn" type="button">Copy</button></div><span class="hint">Add this exact URL under OAuth2 Redirects in the Discord Developer Portal.</span></div>
             <div class="two-col"><div class="field"><label for="discord-client-id">Application client ID</label><input id="discord-client-id" class="input mono" inputmode="numeric" value="${escapeHtml(discordConnection?.clientId || "")}" placeholder="Discord client ID" /></div><div class="field"><label for="discord-client-secret">Client secret</label><input id="discord-client-secret" class="input" type="password" autocomplete="new-password" placeholder="${discordConnection?.configured ? "Leave blank to keep the saved secret" : "Discord client secret"}" /></div></div>
             <p class="hint">The client secret and Discord tokens are encrypted in SQLite and never sent to the browser. Add your Discord account under the application testers while developing RPC access.</p>
             ${discordConnection?.connected ? `<div class="connection-state"><span class="dot ${discordConnection.connected.rpcReady ? "live" : ""}"></span><span>Connected as <strong>${escapeHtml(discordConnection.connected.username)}</strong>${discordConnection.connected.rpcReady ? " with call access" : ", but call access still needs approval"}</span></div>` : ""}
             <div class="discord-config-actions"><button id="save-discord-config" class="btn primary" type="button">Save Discord configuration</button>${discordConnection?.configured && (!discordConnection?.connected || !discordConnection.connected.rpcReady) ? `<a class="btn discord-btn" href="/auth/discord">${discordConnection?.connected ? "Reconnect for call access" : "Connect Discord account"}</a>` : ""}${discordConnection?.connected ? `<button id="disconnect-discord" class="btn ghost" type="button">Disconnect account</button>` : ""}${discordConnection?.source === "settings" ? `<button id="remove-discord-config" class="btn ghost danger" type="button">Remove configuration</button>` : ""}</div>
             <div class="companion-panel">
-              <div><div class="eyebrow">Windows companion</div><h3>${session.companion?.online ? "Connected" : session.companion?.paired ? "Paired, waiting for the EXE" : "Not paired yet"}</h3><p class="subtle">${session.companion?.channelName ? `Following ${escapeHtml(session.companion.channelName)}.` : "Keep Discord Desktop and the companion running while streaming."}</p></div>
-              <div class="discord-config-actions"><a class="btn ghost" href="${escapeHtml(discordConnection?.companionDownloadUrl || session.companion?.downloadUrl || "#")}" download>Download Windows EXE</a>${discordConnection?.connected?.rpcReady ? `<button id="pair-discord-companion" class="btn primary" type="button">${session.companion?.paired ? "Create new pairing code" : "Create pairing code"}</button>` : ""}${session.companion?.paired ? `<button id="remove-discord-companion" class="btn ghost danger" type="button">Forget companion</button>` : ""}</div>
+              <div><div class="eyebrow">Windows companion</div><h3>${session.companion?.online ? "Connected" : session.companion?.paired ? "Paired, waiting for the EXE" : "One-time pairing needed"}</h3><p class="subtle">${session.companion?.channelName ? `Following ${escapeHtml(session.companion.channelName)}.` : session.companion?.paired ? "Start the saved EXE with OBS. No new code is needed." : "Pair once, then keep Discord Desktop and the companion running while streaming."}</p></div>
+              <div class="discord-config-actions"><a class="btn ghost" href="${escapeHtml(discordConnection?.companionDownloadUrl || session.companion?.downloadUrl || "#")}" download>Download Windows EXE</a>${discordConnection?.connected?.rpcReady ? `<button id="pair-discord-companion" class="btn primary" type="button">${session.companion?.paired ? "Replace saved pairing" : "Create one-time pairing"}</button>` : ""}${session.companion?.paired ? `<button id="remove-discord-companion" class="btn ghost danger" type="button">Forget companion</button>` : ""}</div>
             </div>
           </section>
           <div class="settings-actions"><button class="btn primary" type="submit">Save settings</button><button id="sign-out" class="btn ghost" type="button">Sign out</button></div>
@@ -680,10 +731,9 @@ function renderDashboard() {
     button.onpointerup = button.onpointerleave = () => setSpeaking(false);
   });
   document.querySelector("#layout").onchange = async (event) => {
-    const secrets = { joinToken: session.joinToken, overlayToken: session.overlayToken };
-    session = await api(`/api/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ layout: event.target.value }) });
-    Object.assign(session, secrets);
-    renderDashboard();
+    event.target.disabled = true;
+    try { await chooseAutomaticLayout(event.target.value); }
+    catch (error) { event.target.disabled = false; toast(error.message); }
   };
   document.querySelectorAll("[data-view]").forEach((button) => button.onclick = () => {
     activeView = button.dataset.view;
@@ -693,7 +743,10 @@ function renderDashboard() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const secrets = { joinToken: session.joinToken, overlayToken: session.overlayToken };
-    session = await api(`/api/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ name: form.get("name"), layout: form.get("layout"), background: form.get("background") }) });
+    const chosenLayout = form.get("layout");
+    const nextLayout = chosenLayout || session.layout;
+    if (chosenLayout && (customArrangement || nextLayout !== session.layout)) await api(`/api/sessions/${session.id}/placements`, { method: "PUT", body: JSON.stringify({ reset: true }) });
+    session = await api(`/api/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ name: form.get("name"), layout: nextLayout, background: form.get("background") }) });
     Object.assign(session, secrets);
     toast("Settings saved");
     renderDashboard();
