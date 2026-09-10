@@ -19,6 +19,37 @@ if [[ "${EUID}" -ne 0 ]] || ! command -v pct >/dev/null 2>&1; then
 fi
 command -v curl >/dev/null 2>&1 || die "curl is required on the Proxmox host."
 
+if [[ "${1:-}" == "resume" ]]; then
+  ctid="${2:-}"
+  domain="${3:-}"
+  [[ -n "${ctid}" ]] || die "Usage: resume CONTAINER_ID DOMAIN"
+  if [[ -n "${domain}" ]] && [[ ! "${domain}" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])$ ]]; then
+    die "The domain name is not valid."
+  fi
+  pct status "${ctid}" >/dev/null 2>&1 || die "Container ${ctid} was not found."
+  pct set "${ctid}" --features nesting=1
+  pct start "${ctid}" >/dev/null 2>&1 || true
+  network_ready="false"
+  for _ in $(seq 1 60); do
+    if pct exec "${ctid}" -- getent hosts github.com >/dev/null 2>&1; then
+      network_ready="true"
+      break
+    fi
+    sleep 2
+  done
+  [[ "${network_ready}" == "true" ]] || die "Container ${ctid} could not reach the internet."
+  install_file="$(mktemp)"
+  trap 'rm -f "${install_file:-}"' EXIT
+  curl -fsSL "${REPO_RAW}/proxmox/install.sh" -o "${install_file}"
+  pct push "${ctid}" "${install_file}" /root/pngcalls-install.sh --perms 0750
+  pct exec "${ctid}" -- env PNGCALLS_DOMAIN="${domain}" bash /root/pngcalls-install.sh
+  container_ip="$(pct exec "${ctid}" -- hostname -I | awk '{print $1}')"
+  [[ -n "${domain}" ]] && access_url="https://${domain}" || access_url="http://${container_ip}"
+  echo -e "${green}${APP} was installed successfully.${reset}"
+  echo "Address: ${access_url}"
+  exit 0
+fi
+
 if [[ "${1:-}" == "update" ]]; then
   ctid="${2:-}"
   if [[ -z "${ctid}" ]]; then
@@ -122,6 +153,7 @@ pct create "${ctid}" "${template_storage}:vztmpl/${template}" \
   --rootfs "${root_storage}:${disk}" \
   --net0 "${net0}" \
   --unprivileged 1 \
+  --features nesting=1 \
   --onboot 1
 pct start "${ctid}"
 

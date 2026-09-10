@@ -40,6 +40,12 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/yarnobachmann/Zephikyu-P
 
 The native installation stores application data in `/var/lib/pngcalls`, configuration in `/etc/pngcalls`, and source in `/opt/pngcalls`. Use Proxmox backup jobs to protect the complete LXC.
 
+If container creation completed but Debian 13 could not start because nesting was disabled, resume that container instead of creating a second one:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/yarnobachmann/Zephikyu-PNGCalls/main/proxmox/zephikyu-pngcalls.sh)" -- resume 115 pngcalls.yarnobachmann.nl
+```
+
 The application runs natively as a restricted `pngcalls` service account. SQLite and uploads are kept under `/var/lib/pngcalls`, application configuration is kept under `/etc/pngcalls`, and the Node.js download is checked against the official SHA-256 manifest.
 
 To update an installed container, replace `123` with its container ID:
