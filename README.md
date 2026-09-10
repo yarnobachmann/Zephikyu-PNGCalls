@@ -32,7 +32,7 @@ To update an installed container later, replace `123` with its container ID:
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/yarnobachmann/Zephikyu-PNGCalls/main/proxmox/zephikyu-pngcalls.sh)" -- update 123
 ```
 
-To change the domain or add Discord credentials:
+To change the domain later:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/yarnobachmann/Zephikyu-PNGCalls/main/proxmox/zephikyu-pngcalls.sh)" -- configure 123
@@ -56,13 +56,13 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/yarnobachmann/Zephikyu-P
 
 The updater stages the new version, performs a health check, and restores the previous version automatically if startup fails.
 
-To change the domain or configure Discord later:
+To change the domain later:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/yarnobachmann/Zephikyu-PNGCalls/main/proxmox/zephikyu-pngcalls.sh)" -- configure 123
 ```
 
-Use the HTTPS address printed by the configuration helper as the Discord OAuth redirect address, followed by `/auth/discord/callback`.
+Discord credentials are configured from the host Settings page after installation.
 
 The Docker Compose deployment remains available for users who already have a Debian LXC or another Docker host. Its files are `compose.proxmox.yaml`, `.env.proxmox.example`, and `scripts/install-proxmox-lxc.sh`.
 
@@ -139,7 +139,9 @@ Create an application in the Discord Developer Portal and add this redirect URL:
 https://your-pngcalls-domain.example/auth/discord/callback
 ```
 
-Set `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, and `DISCORD_REDIRECT_URI` in the deployment environment. The Settings screen will then offer Connect Discord. The OAuth connection requests only the `identify` scope and stores the Discord user ID and display name. Access and refresh tokens are not stored.
+Open the host Settings page and copy the displayed redirect URL into the Discord application's OAuth2 Redirects list. Enter the application's client ID and client secret in PNGCalls, save the configuration, and select Connect Discord account. The client secret is encrypted before it is stored in SQLite. Back up the `.credentials-key` file alongside the database because saved secrets cannot be decrypted without it.
+
+Environment variables named `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, and `DISCORD_REDIRECT_URI` remain supported as a fallback for existing deployments. A configuration saved in Settings takes priority. The OAuth connection requests only the `identify` scope and stores the Discord user ID and display name. Access and refresh tokens are not stored.
 
 Discord account linking does not automatically read a normal Discord call. Discord desktop RPC requires an approved Discord application and a desktop integration. Invite links and browser microphone detection remain the supported no-install speaking workflow.
 

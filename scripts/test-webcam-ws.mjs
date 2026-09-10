@@ -1,16 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
+import { DatabaseSync } from "node:sqlite";
 import WebSocket from "ws";
 
 const port = 4192;
 const baseUrl = `http://127.0.0.1:${port}`;
 const socketUrl = `ws://127.0.0.1:${port}`;
 const testRoot = mkdtempSync(path.join(os.tmpdir(), "pngcalls-webcam-test-"));
-const env = { ...process.env, PORT: String(port), HOST: "127.0.0.1", DATA_DIR: path.join(testRoot, "data"), UPLOAD_DIR: path.join(testRoot, "uploads"), NODE_ENV: "test" };
+const env = { ...process.env, PORT: String(port), HOST: "127.0.0.1", DATA_DIR: path.join(testRoot, "data"), UPLOAD_DIR: path.join(testRoot, "uploads"), NODE_ENV: "test", DISCORD_CLIENT_ID: "", DISCORD_CLIENT_SECRET: "", DISCORD_REDIRECT_URI: "" };
 
 const initialized = spawnSync(process.execPath, ["scripts/init-db.mjs"], { env, stdio: "inherit" });
 assert.equal(initialized.status, 0, "Database initialization failed");
@@ -47,6 +48,35 @@ try {
   const setup = await setupResponse.json();
   const hostCookies = cookiesFrom(setupResponse);
 
+  const discordSecret = "test-discord-secret-value-123456";
+  const discordConfigResponse = await fetch(`${baseUrl}/api/discord/config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
+    body: JSON.stringify({ clientId: "123456789012345678", clientSecret: discordSecret }),
+  });
+  assert.equal(discordConfigResponse.status, 200);
+  const discordStatusResponse = await fetch(`${baseUrl}/api/discord/status`, { headers: { Cookie: hostCookies } });
+  assert.equal(discordStatusResponse.status, 200);
+  const discordStatus = await discordStatusResponse.json();
+  assert.equal(discordStatus.configured, true);
+  assert.equal(discordStatus.clientId, "123456789012345678");
+  assert.equal(discordStatus.source, "settings");
+  assert.equal(JSON.stringify(discordStatus).includes(discordSecret), false);
+  assert.equal(existsSync(path.join(testRoot, "data", ".credentials-key")), true);
+  const database = new DatabaseSync(path.join(testRoot, "data", "zephikyu.db"), { readOnly: true });
+  const storedConfig = database.prepare('SELECT "clientSecretEncrypted" FROM "DiscordOAuthConfig" WHERE "id" = 1').get();
+  database.close();
+  assert.notEqual(storedConfig.clientSecretEncrypted, discordSecret);
+  assert.equal(storedConfig.clientSecretEncrypted.includes(discordSecret), false);
+
+  const removeDiscordResponse = await fetch(`${baseUrl}/api/discord/config`, {
+    method: "DELETE",
+    headers: { Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
+  });
+  assert.equal(removeDiscordResponse.status, 204);
+  const removedDiscordStatus = await fetch(`${baseUrl}/api/discord/status`, { headers: { Cookie: hostCookies } }).then((response) => response.json());
+  assert.equal(removedDiscordStatus.configured, false);
+
   const roomResponse = await fetch(`${baseUrl}/api/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
@@ -77,7 +107,7 @@ try {
   jpeg[jpeg.length - 1] = 0xd9;
   publisher.send(jpeg);
   assert.deepEqual(await received, jpeg);
-  console.log("Webcam WebSocket transport passed");
+  console.log("Discord settings and webcam WebSocket transport passed");
 } finally {
   publisher?.terminate();
   viewer?.terminate();

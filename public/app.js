@@ -368,7 +368,14 @@ function renderDashboard() {
         <form id="settings-form" class="settings-grid">
           <section class="card stack"><div><h2>Room identity</h2><p class="subtle">Shown in the host dashboard and guest join page.</p></div><div class="field"><label>Room name</label><input class="input" name="name" value="${escapeHtml(session.name)}" maxlength="80" /></div></section>
           <section class="card stack"><div><h2>Overlay appearance</h2><p class="subtle">Choose how avatars and cameras are arranged in OBS.</p></div><div class="field"><label>Layout</label><select class="input" name="layout"><option value="row" ${session.layout === "row" ? "selected" : ""}>Horizontal row</option><option value="arc" ${session.layout === "arc" ? "selected" : ""}>Soft arc</option><option value="stack" ${session.layout === "stack" ? "selected" : ""}>Vertical stack</option></select></div><div class="field"><label>Preview background</label><select class="input" name="background"><option value="transparent" ${session.background === "transparent" ? "selected" : ""}>Transparent</option><option value="checker" ${session.background === "checker" ? "selected" : ""}>Checker</option><option value="dark" ${session.background === "dark" ? "selected" : ""}>Dark</option></select></div></section>
-          <section class="card stack discord-card"><div><h2>Discord connection</h2><p class="subtle">Optional account connection. Invite-link mode keeps working without Discord.</p></div>${discordConnection?.connected ? `<div class="connection-state"><span class="dot live"></span><span>Connected as <strong>${escapeHtml(discordConnection.connected.username)}</strong></span></div><button id="disconnect-discord" class="btn ghost" type="button">Disconnect Discord</button>` : discordConnection?.configured ? `<a class="btn discord-btn" href="/auth/discord">Connect Discord account</a>` : `<p class="hint">Add DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET to the server environment to enable this option.</p>`}</section>
+          <section class="card stack discord-card">
+            <div><h2>Discord connection</h2><p class="subtle">Configure Discord here, then connect the host account. Invite-link mode keeps working without Discord.</p></div>
+            <div class="field"><label for="discord-callback">Redirect URL</label><div class="copy-field"><input id="discord-callback" class="input mono" value="${escapeHtml(discordConnection?.callbackUrl || `${origin}/auth/discord/callback`)}" readonly /><button id="copy-discord-callback" class="btn" type="button">Copy</button></div><span class="hint">Add this exact URL under OAuth2 Redirects in the Discord Developer Portal.</span></div>
+            <div class="two-col"><div class="field"><label for="discord-client-id">Application client ID</label><input id="discord-client-id" class="input mono" inputmode="numeric" value="${escapeHtml(discordConnection?.clientId || "")}" placeholder="Discord client ID" /></div><div class="field"><label for="discord-client-secret">Client secret</label><input id="discord-client-secret" class="input" type="password" autocomplete="new-password" placeholder="${discordConnection?.configured ? "Leave blank to keep the saved secret" : "Discord client secret"}" /></div></div>
+            <p class="hint">The client secret is encrypted before it is stored in SQLite. It is never shown again. ${discordConnection?.source === "environment" ? "The current values come from the server environment. Saving here replaces them." : ""}</p>
+            ${discordConnection?.connected ? `<div class="connection-state"><span class="dot live"></span><span>Connected as <strong>${escapeHtml(discordConnection.connected.username)}</strong></span></div>` : ""}
+            <div class="discord-config-actions"><button id="save-discord-config" class="btn primary" type="button">Save Discord configuration</button>${discordConnection?.configured && !discordConnection?.connected ? `<a class="btn discord-btn" href="/auth/discord">Connect Discord account</a>` : ""}${discordConnection?.connected ? `<button id="disconnect-discord" class="btn ghost" type="button">Disconnect account</button>` : ""}${discordConnection?.source === "settings" ? `<button id="remove-discord-config" class="btn ghost danger" type="button">Remove configuration</button>` : ""}</div>
+          </section>
           <div class="settings-actions"><button class="btn primary" type="submit">Save settings</button><button id="sign-out" class="btn ghost" type="button">Sign out</button></div>
         </form>
       </section>
@@ -411,10 +418,31 @@ function renderDashboard() {
     await api("/api/auth/logout", { method: "POST" });
     await initializeHost();
   };
+  document.querySelector("#copy-discord-callback").onclick = () => navigator.clipboard.writeText(document.querySelector("#discord-callback").value).then(() => toast("Discord redirect URL copied"));
+  document.querySelector("#save-discord-config").onclick = async () => {
+    const button = document.querySelector("#save-discord-config");
+    button.disabled = true;
+    try {
+      await api("/api/discord/config", { method: "POST", body: JSON.stringify({ clientId: document.querySelector("#discord-client-id").value, clientSecret: document.querySelector("#discord-client-secret").value }) });
+      discordConnection = await api("/api/discord/status");
+      toast("Discord configuration saved");
+      renderDashboard();
+    } catch (error) {
+      toast(error.message);
+      button.disabled = false;
+    }
+  };
   document.querySelector("#disconnect-discord")?.addEventListener("click", async () => {
     await api("/api/discord/disconnect", { method: "POST" });
     discordConnection = await api("/api/discord/status");
     toast("Discord disconnected");
+    renderDashboard();
+  });
+  document.querySelector("#remove-discord-config")?.addEventListener("click", async () => {
+    if (!confirm("Remove the saved Discord configuration and disconnect the account?")) return;
+    await api("/api/discord/config", { method: "DELETE" });
+    discordConnection = await api("/api/discord/status");
+    toast("Discord configuration removed");
     renderDashboard();
   });
 }

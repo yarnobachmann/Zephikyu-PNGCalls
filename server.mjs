@@ -14,6 +14,7 @@ const host = process.env.HOST || "0.0.0.0";
 const dataDir = path.resolve(process.env.DATA_DIR || "./data");
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || "./uploads");
 const stateFile = path.join(dataDir, "state.json");
+const credentialKeyFile = path.join(dataDir, ".credentials-key");
 const maxUploadBytes = Number(process.env.MAX_UPLOAD_MB || 8) * 1024 * 1024;
 process.env.DATABASE_URL = `file:${path.join(dataDir, "zephikyu.db").replaceAll("\\", "/")}`;
 fs.mkdirSync(dataDir, { recursive: true });
@@ -27,6 +28,7 @@ const auditSalt = crypto.randomBytes(32);
 const allowedImages = new Map([["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/gif", "gif"]]);
 const speakingAnimations = new Set(["none", "bounce", "pulse", "shake", "glow"]);
 const speakingAnimation = (value) => speakingAnimations.has(value) ? value : "none";
+let credentialKeyCache;
 
 const token = (bytes = 18) => crypto.randomBytes(bytes).toString("base64url");
 const hash = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
@@ -39,6 +41,54 @@ const safeEqual = (left, right) => {
   const b = Buffer.from(String(right));
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 };
+
+function credentialKey() {
+  if (credentialKeyCache) return credentialKeyCache;
+  if (process.env.CREDENTIALS_KEY) {
+    credentialKeyCache = crypto.createHash("sha256").update(process.env.CREDENTIALS_KEY).digest();
+    return credentialKeyCache;
+  }
+  try {
+    const stored = Buffer.from(fs.readFileSync(credentialKeyFile, "utf8").trim(), "base64url");
+    if (stored.length !== 32) throw new Error("Invalid credentials key");
+    credentialKeyCache = stored;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    credentialKeyCache = crypto.randomBytes(32);
+    fs.writeFileSync(credentialKeyFile, credentialKeyCache.toString("base64url"), { encoding: "utf8", mode: 0o600, flag: "wx" });
+    try { fs.chmodSync(credentialKeyFile, 0o600); } catch {}
+  }
+  return credentialKeyCache;
+}
+
+function encryptCredential(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", credentialKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
+  return ["v1", iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), encrypted.toString("base64url")].join(".");
+}
+
+function decryptCredential(value) {
+  const [version, iv, tag, encrypted] = String(value).split(".");
+  if (version !== "v1" || !iv || !tag || !encrypted) throw new Error("Invalid encrypted credential");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", credentialKey(), Buffer.from(iv, "base64url"));
+  decipher.setAuthTag(Buffer.from(tag, "base64url"));
+  return Buffer.concat([decipher.update(Buffer.from(encrypted, "base64url")), decipher.final()]).toString("utf8");
+}
+
+async function discordOAuthConfig() {
+  const saved = await prisma.discordOAuthConfig.findUnique({ where: { id: 1 } });
+  if (saved) return { clientId: saved.clientId, clientSecret: decryptCredential(saved.clientSecretEncrypted), source: "settings" };
+  if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
+    return { clientId: process.env.DISCORD_CLIENT_ID, clientSecret: process.env.DISCORD_CLIENT_SECRET, source: "environment" };
+  }
+  return null;
+}
+
+function discordCallbackUrl() {
+  const configuredOrigin = process.env.PUBLIC_URL || `http://localhost:${port}`;
+  return process.env.DISCORD_REDIRECT_URI || `${configuredOrigin.replace(/\/$/, "")}/auth/discord/callback`;
+}
 
 function parseCookies(req) {
   return Object.fromEntries(String(req.headers.cookie || "").split(";").map((part) => part.trim()).filter(Boolean).map((part) => {
@@ -254,20 +304,47 @@ app.post("/api/auth/logout", requireHost, requireCsrf, async (req, res) => {
 
 app.get("/api/discord/status", requireHost, async (_req, res) => {
   const connection = await prisma.discordConnection.findUnique({ where: { id: 1 } });
+  const config = await discordOAuthConfig().catch((error) => { console.error("Discord configuration could not be decrypted", error); return null; });
   res.json({
-    configured: Boolean(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET),
+    configured: Boolean(config),
+    clientId: config?.clientId || "",
+    source: config?.source || null,
+    callbackUrl: discordCallbackUrl(),
     connected: connection ? { username: connection.username, connectedAt: connection.connectedAt } : null,
   });
 });
 
+app.post("/api/discord/config", requireHost, requireCsrf, async (req, res) => {
+  const clientId = String(req.body?.clientId || "").trim();
+  const clientSecret = String(req.body?.clientSecret || "").trim();
+  if (!/^\d{16,24}$/.test(clientId)) return res.status(400).json({ error: "Enter a valid Discord application client ID" });
+  if (clientSecret && (clientSecret.length < 24 || clientSecret.length > 200)) return res.status(400).json({ error: "Enter a valid Discord client secret" });
+  const existing = await prisma.discordOAuthConfig.findUnique({ where: { id: 1 } });
+  if (!clientSecret && (!existing || existing.clientId !== clientId)) return res.status(400).json({ error: "Enter the Discord client secret" });
+  const encrypted = clientSecret ? encryptCredential(clientSecret) : existing.clientSecretEncrypted;
+  const changed = !existing || existing.clientId !== clientId || Boolean(clientSecret);
+  await prisma.$transaction([
+    prisma.discordOAuthConfig.upsert({ where: { id: 1 }, create: { id: 1, clientId, clientSecretEncrypted: encrypted }, update: { clientId, clientSecretEncrypted: encrypted } }),
+    ...(changed ? [prisma.discordConnection.deleteMany()] : []),
+  ]);
+  await audit(req, "discord.configure", "success", "settings");
+  res.json({ configured: true, clientId, source: "settings", callbackUrl: discordCallbackUrl(), connected: null });
+});
+
+app.delete("/api/discord/config", requireHost, requireCsrf, async (req, res) => {
+  await prisma.$transaction([prisma.discordConnection.deleteMany(), prisma.discordOAuthConfig.deleteMany()]);
+  await audit(req, "discord.configure", "removed", "settings");
+  res.status(204).end();
+});
+
 app.get("/auth/discord", requireHost, async (req, res) => {
-  const clientId = process.env.DISCORD_CLIENT_ID;
-  if (!clientId || !process.env.DISCORD_CLIENT_SECRET) return res.status(503).send("Discord OAuth is not configured on this server.");
+  const config = await discordOAuthConfig().catch(() => null);
+  if (!config) return res.status(503).send("Discord OAuth is not configured on this server.");
   const state = token(32);
-  discordStates.set(hash(state), { hostSessionId: req.hostContext.authSession.id, expiresAt: Date.now() + 10 * 60 * 1000 });
-  const callback = process.env.DISCORD_REDIRECT_URI || `${process.env.PUBLIC_URL || `http://localhost:${port}`}/auth/discord/callback`;
+  const callback = discordCallbackUrl();
+  discordStates.set(hash(state), { hostSessionId: req.hostContext.authSession.id, expiresAt: Date.now() + 10 * 60 * 1000, config, callback });
   const authorize = new URL("https://discord.com/oauth2/authorize");
-  authorize.search = new URLSearchParams({ client_id: clientId, response_type: "code", redirect_uri: callback, scope: "identify", state, prompt: "consent" }).toString();
+  authorize.search = new URLSearchParams({ client_id: config.clientId, response_type: "code", redirect_uri: callback, scope: "identify", state, prompt: "consent" }).toString();
   res.redirect(authorize.toString());
 });
 
@@ -279,11 +356,10 @@ app.get("/auth/discord/callback", async (req, res) => {
   if (!context || !pending || pending.expiresAt < Date.now() || pending.hostSessionId !== context.authSession.id || !req.query.code) {
     return res.status(400).send("Discord connection could not be verified. Return to PNGCalls and try again.");
   }
-  const callback = process.env.DISCORD_REDIRECT_URI || `${process.env.PUBLIC_URL || `http://localhost:${port}`}/auth/discord/callback`;
   const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: process.env.DISCORD_CLIENT_ID, client_secret: process.env.DISCORD_CLIENT_SECRET, grant_type: "authorization_code", code: String(req.query.code), redirect_uri: callback }),
+    body: new URLSearchParams({ client_id: pending.config.clientId, client_secret: pending.config.clientSecret, grant_type: "authorization_code", code: String(req.query.code), redirect_uri: pending.callback }),
   });
   if (!tokenResponse.ok) return res.status(502).send("Discord rejected the connection request.");
   const credentials = await tokenResponse.json();

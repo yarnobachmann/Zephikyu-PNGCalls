@@ -22,13 +22,8 @@ if [[ -n "${domain}" ]] && [[ ! "${domain}" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-
   exit 1
 fi
 
-current_client_id="$(current_value DISCORD_CLIENT_ID)"
-read -r -p "Discord client ID [${current_client_id:-disabled}]: " client_id
-client_id="${client_id:-$current_client_id}"
-current_secret="$(current_value DISCORD_CLIENT_SECRET)"
-read -r -s -p "Discord client secret [press Enter to keep current]: " client_secret
-echo
-client_secret="${client_secret:-$current_secret}"
+client_id="$(current_value DISCORD_CLIENT_ID)"
+client_secret="$(current_value DISCORD_CLIENT_SECRET)"
 
 if [[ -n "${domain}" ]]; then
   public_url="https://${domain}"
@@ -66,6 +61,4 @@ systemctl restart pngcalls
 systemctl restart caddy
 echo "PNGCalls configuration was updated."
 echo "Address: ${public_url}"
-if [[ -n "${client_id}" ]]; then
-  echo "Discord redirect URL: ${public_url}/auth/discord/callback"
-fi
+echo "Configure Discord from the host Settings page."

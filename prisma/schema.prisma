@@ -60,6 +60,13 @@ model DiscordConnection {
   connectedAt   DateTime @default(now())
 }
 
+model DiscordOAuthConfig {
+  id                    Int      @id @default(1)
+  clientId              String
+  clientSecretEncrypted String
+  updatedAt             DateTime @updatedAt
+}
+
 model Presence {
   playerId String   @id
   present  Boolean  @default(true)
