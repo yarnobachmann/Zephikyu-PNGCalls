@@ -252,6 +252,25 @@ function brandMarkup() {
   return `<div class="brand"><img class="brand-gif" src="/assets/zeph.gif" alt="Zephikyu" /><span>Zephikyu <i>PNGCalls</i></span></div>`;
 }
 
+function studioShelfMarkup() {
+  return `<div class="studio-shelf" aria-hidden="true">
+    <img class="studio-shelves" src="/assets/studio/shelves.png" alt="" />
+    <img class="shelf-monster" src="/assets/studio/monster.png" alt="" />
+    <img class="shelf-foxy" src="/assets/studio/foxy.png" alt="" />
+    <img class="shelf-funko" src="/assets/studio/funko.png" alt="" />
+    <img class="shelf-mimikyu" src="/assets/studio/mimikyu-head.png" alt="" />
+  </div>`;
+}
+
+function studioDeskMarkup() {
+  return `<div class="studio-desk" aria-hidden="true">
+    <img class="studio-chair" src="/assets/studio/chair.png" alt="" />
+    <img class="studio-mic" src="/assets/studio/mic.png" alt="" />
+    <img class="studio-foxy" src="/assets/studio/foxy.png" alt="" />
+    <img class="studio-desk-top" src="/assets/studio/desk.png" alt="" />
+  </div>`;
+}
+
 function renderAuth(needsSetup) {
   app.innerHTML = `<main class="auth-page">
     <section class="auth-crest"><img class="auth-banner" src="/assets/team-banner.png" alt="Zephikyu's favorite team" /><div class="auth-banner-copy"><div class="eyebrow">Zephikyu PNGCalls</div><h1>Enter the night.</h1><p>Your private avatar and camera room for every stream and every game.</p></div></section>
@@ -288,6 +307,7 @@ function renderWelcome() {
       <div class="eyebrow">Zephikyu · Self-hosted · OBS ready</div>
       <h1>Awaken your crew<span class="slash">.</span></h1>
       <p>Give every player a speaking-aware avatar or webcam without game mods. Invite links work on their own, and Discord connection is optional.</p>
+      ${studioDeskMarkup()}
     </section>
     <section class="welcome-panel">
       <div class="eyebrow">New overlay</div>
@@ -322,6 +342,7 @@ function renderDashboard() {
     <aside class="rail">
       ${brandMarkup()}
       <nav class="nav" aria-label="Dashboard"><button class="nav-item ${activeView === "overlay" ? "active" : ""}" data-view="overlay">◫ Overlay</button><button class="nav-item ${activeView === "players" ? "active" : ""}" data-view="players">⌁ Player room</button><button class="nav-item ${activeView === "settings" ? "active" : ""}" data-view="settings">⚙ Settings</button></nav>
+      ${studioShelfMarkup()}
       <div class="rail-note"><div class="status-line"><span class="dot ${session.onlineCount ? "live" : ""}"></span>${session.onlineCount ? `${session.onlineCount} connected` : "Waiting for players"}</div>Invite links work alone. Discord is optional.</div>
     </aside>
     <main class="main">
