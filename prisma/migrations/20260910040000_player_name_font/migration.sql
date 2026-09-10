@@ -1,0 +1,1 @@
+ALTER TABLE "Player" ADD COLUMN "nameFont" TEXT NOT NULL DEFAULT 'rounded';

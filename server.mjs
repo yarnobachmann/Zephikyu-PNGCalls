@@ -28,6 +28,8 @@ const auditSalt = crypto.randomBytes(32);
 const allowedImages = new Map([["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/gif", "gif"]]);
 const speakingAnimations = new Set(["none", "bounce", "pulse", "shake", "glow"]);
 const speakingAnimation = (value) => speakingAnimations.has(value) ? value : "none";
+const nameFonts = new Set(["rounded", "comic", "typewriter", "classic", "bold"]);
+const nameFont = (value) => nameFonts.has(value) ? value : "rounded";
 let credentialKeyCache;
 
 const token = (bytes = 18) => crypto.randomBytes(bytes).toString("base64url");
@@ -163,6 +165,7 @@ function publicRoom(room) {
       id: player.id, name: player.name, idleImage: player.idleImage, talkingImage: player.talkingImage || player.idleImage, accent: player.accent,
       mediaMode: player.mediaMode || "png",
       speakingAnimation: speakingAnimation(player.speakingAnimation),
+      nameFont: nameFont(player.nameFont),
       webcamImage: player.mediaMode === "webcam" ? `/api/webcam/${room.id}/${room.overlayToken}/${player.id}` : null,
       speaking: Boolean(player.presence?.speaking), muted: Boolean(player.presence?.muted), source: player.presence?.source || "manual",
     })),
@@ -408,10 +411,10 @@ app.put("/api/sessions/:sessionId/players/:playerId", requireHost, requireCsrf, 
   if (conflicting && conflicting.roomId !== room.id) return res.status(409).json({ error: "Player ID already exists" });
   const player = await prisma.player.upsert({ where: { id }, create: {
     id, roomId: room.id, name: cleanText(req.body?.name, id, 60), accent: /^#[0-9a-f]{6}$/i.test(req.body?.accent) ? req.body.accent : "#d0193c",
-    pinned: req.body?.pinned === undefined ? true : Boolean(req.body.pinned), mediaMode: "png", speakingAnimation: speakingAnimation(req.body?.speakingAnimation), presence: { create: { source: "manual" } },
+    pinned: req.body?.pinned === undefined ? true : Boolean(req.body.pinned), mediaMode: "png", speakingAnimation: speakingAnimation(req.body?.speakingAnimation), nameFont: nameFont(req.body?.nameFont), presence: { create: { source: "manual" } },
   }, update: {
     name: cleanText(req.body?.name, current?.name || id, 60), accent: /^#[0-9a-f]{6}$/i.test(req.body?.accent) ? req.body.accent : current?.accent || "#d0193c",
-    pinned: req.body?.pinned === undefined ? current?.pinned ?? true : Boolean(req.body.pinned), speakingAnimation: req.body?.speakingAnimation === undefined ? speakingAnimation(current?.speakingAnimation) : speakingAnimation(req.body.speakingAnimation),
+    pinned: req.body?.pinned === undefined ? current?.pinned ?? true : Boolean(req.body.pinned), speakingAnimation: req.body?.speakingAnimation === undefined ? speakingAnimation(current?.speakingAnimation) : speakingAnimation(req.body.speakingAnimation), nameFont: req.body?.nameFont === undefined ? nameFont(current?.nameFont) : nameFont(req.body.nameFont),
   } });
   await prisma.room.update({ where: { id: room.id }, data: { updatedAt: new Date() } }); await broadcast(room.id); res.json(player);
 });
@@ -477,7 +480,7 @@ app.post("/api/join/:sessionId/:joinToken", joinLimit, async (req, res) => {
   }
   const player = await prisma.player.create({ data: {
     id: token(8), roomId: room.id, name: cleanText(req.body?.name, "Player", 60), accent: /^#[0-9a-f]{6}$/i.test(req.body?.accent) ? req.body.accent : "#d0193c",
-    pinned: false, joinKey: token(24), mediaMode: req.body?.mediaMode === "webcam" ? "webcam" : "png", speakingAnimation: speakingAnimation(req.body?.speakingAnimation), presence: { create: { source: "browser" } },
+    pinned: false, joinKey: token(24), mediaMode: req.body?.mediaMode === "webcam" ? "webcam" : "png", speakingAnimation: speakingAnimation(req.body?.speakingAnimation), nameFont: nameFont(req.body?.nameFont), presence: { create: { source: "browser" } },
   } });
   await prisma.room.update({ where: { id: room.id }, data: { updatedAt: new Date() } }); await audit(req, "guest.join", "success", room.id, "guest"); await broadcast(room.id);
   setCookie(res, guestCookieName(room.id), `${player.id}.${player.joinKey}`, 60 * 60 * 12, cookieSecure(req), true);

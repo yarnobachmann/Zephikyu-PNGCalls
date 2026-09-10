@@ -88,11 +88,14 @@ try {
   const joinResponse = await fetch(`${baseUrl}/api/join/${room.sessionId}/${room.joinToken}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "Camera", mediaMode: "webcam" }),
+    body: JSON.stringify({ name: "Camera", mediaMode: "webcam", nameFont: "typewriter" }),
   });
   assert.equal(joinResponse.status, 201);
   const participant = await joinResponse.json();
   const guestCookie = cookiesFrom(joinResponse);
+  assert.equal(participant.player.nameFont, "typewriter");
+  const overlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
+  assert.equal(overlay.players[0].nameFont, "typewriter");
 
   viewer = await openSocket(`${socketUrl}/ws/view/${room.sessionId}/${room.overlayToken}/${participant.playerId}`);
   publisher = await openSocket(`${socketUrl}/ws/publish/${room.sessionId}/${room.joinToken}/${participant.playerId}`, guestCookie);

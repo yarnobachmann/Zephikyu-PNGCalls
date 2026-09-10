@@ -12,6 +12,15 @@ let discordConnection = null;
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, Number(value)));
+const nameFontValues = ["rounded", "comic", "typewriter", "classic", "bold"];
+const normalizeNameFont = (value) => nameFontValues.includes(value) ? value : "rounded";
+const nameFontOptions = (selected = "rounded") => [
+  ["rounded", "Friendly rounded"],
+  ["comic", "Handwritten"],
+  ["typewriter", "Typewriter"],
+  ["classic", "Classic serif"],
+  ["bold", "Big and bold"],
+].map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
 function normalizeCrop(crop = {}) {
   return {
     zoom: clamp(crop.zoom || 1, 1, 8),
@@ -75,7 +84,8 @@ function avatarMarkup(player) {
   const isWebcam = player.mediaMode === "webcam";
   const image = isWebcam ? player.webcamImage : player.speaking ? player.talkingImage || player.idleImage : player.idleImage;
   const animation = ["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none";
-  return `<article class="avatar ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)}">
+  const font = normalizeNameFont(player.nameFont);
+  return `<article class="avatar font-${font} ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)}">
     ${image ? `<img class="avatar-img ${isWebcam ? "webcam-img" : ""}" src="${escapeHtml(image)}${isWebcam ? `?v=${Date.now()}` : ""}" ${isWebcam ? `data-webcam-src="${escapeHtml(image)}"` : ""} alt="${isWebcam ? `${escapeHtml(player.name)} webcam` : ""}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}
     <div class="avatar-name">${escapeHtml(player.name)}</div>
   </article>`;
@@ -167,6 +177,7 @@ const tutorialImage = "/assets/tutorial-zeph.gif";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
     ["input[name='name']", "Start with the name that should appear below your avatar or camera."],
+    ["#name-font", "Choose how your display name should look in the room and OBS."],
     ["#media-mode", "Choose PNG images or Webcam. Selecting Webcam hides the PNG uploads and opens the camera setup."],
     ["#find-cameras", "Find cameras lists every detected source. If one is busy, choose a different camera from the list."],
     ["input[name='accent']", "Pick the accent used for your speaking outline, camera border, and glow."],
@@ -180,7 +191,7 @@ function tutorialSteps() {
     ["#leave-room", "Use this when you want to leave the overlay and forget this room on this device."],
   ];
   if (document.querySelector("#auth-form")) return [
-    ["#auth-form input[name='username']", "Create or enter the private host account used to manage rooms."],
+    ["#auth-form input[name='username']", "You are not allowed here you secondhand scoobydoo shoe."],
     ["#auth-form input[name='password']", "Use a unique password of at least 12 characters."],
     ["#auth-form button[type='submit']", "Sign in to open the host dashboard. Invited players never need an account."],
   ];
@@ -235,13 +246,15 @@ function mountTutorialHelper() {
   if (!app.children.length) { setTimeout(mountTutorialHelper, 400); return; }
   const helper = document.createElement("aside");
   helper.className = "tutorial-helper";
-  helper.innerHTML = `<button type="button" aria-label="Open PNGCalls tutorial"><span class="tutorial-balloon">Need help? Press me.</span><img src="${tutorialImage}" alt="Zeph tutorial helper" /></button>`;
+  const helperCopy = document.querySelector("#auth-form") ? "You are not allowed here you secondhand scoobydoo shoe." : "Need help? Press me.";
+  helper.innerHTML = `<button type="button" aria-label="Open PNGCalls tutorial"><span class="tutorial-balloon">${helperCopy}</span><img src="${tutorialImage}" alt="Zeph tutorial helper" /></button>`;
   document.body.append(helper);
   helper.querySelector("button").onclick = startTutorial;
   if (localStorage.getItem("pngcalls.tutorialSeen")) return;
   const prompt = document.createElement("div");
   prompt.className = "tutorial-prompt";
-  prompt.innerHTML = `<section class="tutorial-prompt-card" role="dialog" aria-modal="true" aria-labelledby="tutorial-title"><img src="${tutorialImage}" alt="" /><div><div class="eyebrow">Welcome to PNGCalls</div><h2 id="tutorial-title">Is this your first time here?</h2><p>Zeph can show you where everything is.</p><div class="actions"><button class="btn primary tutorial-yes" type="button">Yes, show me</button><button class="btn ghost tutorial-no" type="button">No, thanks</button></div></div></section>`;
+  const authPage = Boolean(document.querySelector("#auth-form"));
+  prompt.innerHTML = `<section class="tutorial-prompt-card" role="dialog" aria-modal="true" aria-labelledby="tutorial-title"><img src="${tutorialImage}" alt="" /><div><div class="eyebrow">${authPage ? "Host territory" : "Welcome to PNGCalls"}</div><h2 id="tutorial-title">${authPage ? "Wrong door." : "Is this your first time here?"}</h2><p>${authPage ? "You are not allowed here you secondhand scoobydoo shoe." : "Zeph can show you where everything is."}</p><div class="actions"><button class="btn primary tutorial-yes" type="button">${authPage ? "I am the host" : "Yes, show me"}</button><button class="btn ghost tutorial-no" type="button">${authPage ? "Back away" : "No, thanks"}</button></div></div></section>`;
   document.body.append(prompt);
   prompt.querySelector(".tutorial-yes").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialSeen", "true"); startTutorial(); };
   prompt.querySelector(".tutorial-no").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialSeen", "true"); };
@@ -265,7 +278,6 @@ function studioShelfMarkup() {
 function studioDeskMarkup() {
   return `<div class="studio-desk" aria-hidden="true">
     <img class="studio-chair" src="/assets/studio/chair.png" alt="" />
-    <img class="studio-mic" src="/assets/studio/mic.png" alt="" />
     <img class="studio-foxy" src="/assets/studio/foxy.png" alt="" />
     <img class="studio-desk-top" src="/assets/studio/desk.png" alt="" />
   </div>`;
@@ -563,6 +575,7 @@ async function runJoin() {
         <p class="join-copy">Choose PNG images or a webcam. Microphone audio stays on this device. Webcam mode sends camera frames only to this PNGCalls server.</p>
         <form id="join-form" class="stack">
           <div class="field"><label>Display name</label><input class="input" name="name" required maxlength="60" placeholder="Your name" /></div>
+          <div class="field"><label for="name-font">Name font</label><select id="name-font" class="input font-choice font-rounded" name="nameFont">${nameFontOptions()}</select><span id="font-preview" class="font-preview font-rounded">Your name will look like this</span></div>
           <div class="field"><label>Appearance</label><select id="media-mode" class="input" name="mediaMode"><option value="png">PNG images</option><option value="webcam">Webcam</option></select></div>
           <div id="png-fields" class="two-col"><div class="field"><label>Idle image</label><input class="input" name="idle" type="file" required accept="image/png,image/jpeg,image/webp,image/gif" /></div><div class="field"><label>Talking image</label><input class="input" name="talking" type="file" required accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
           <section id="camera-fields" class="camera-picker" hidden>
@@ -581,6 +594,17 @@ async function runJoin() {
       </section>
     </main>`;
     const modeSelect = document.querySelector("#media-mode");
+    const nameInput = document.querySelector("input[name='name']");
+    const nameFontSelect = document.querySelector("#name-font");
+    const fontPreview = document.querySelector("#font-preview");
+    const syncFontPreview = () => {
+      nameFontSelect.className = `input font-choice font-${normalizeNameFont(nameFontSelect.value)}`;
+      fontPreview.className = `font-preview font-${normalizeNameFont(nameFontSelect.value)}`;
+      fontPreview.textContent = nameInput.value.trim() || "Your name will look like this";
+    };
+    nameFontSelect.onchange = syncFontPreview;
+    nameInput.oninput = syncFontPreview;
+    syncFontPreview();
     const syncMode = () => {
       const webcam = modeSelect.value === "webcam";
       document.querySelector("#png-fields").hidden = webcam;
@@ -661,10 +685,11 @@ async function runJoin() {
         const form = new FormData(event.currentTarget);
         const mediaMode = form.get("mediaMode");
         const speakingAnimation = form.get("animateSpeaking") ? form.get("speakingAnimation") : "none";
-        const joined = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ name: form.get("name"), accent: form.get("accent"), mediaMode, speakingAnimation }) });
+        const joined = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ name: form.get("name"), nameFont: normalizeNameFont(form.get("nameFont")), accent: form.get("accent"), mediaMode, speakingAnimation }) });
         identity = {
           playerId: joined.playerId,
           name: form.get("name"),
+          nameFont: normalizeNameFont(form.get("nameFont")),
           mediaMode,
           cameraDeviceId: mediaMode === "webcam" ? form.get("cameraDeviceId") || "" : "",
           cameraFps: mediaMode === "webcam" && form.get("cameraFps") === "60" ? 60 : 30,
@@ -692,6 +717,7 @@ async function runJoin() {
   try {
     const resumed = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ playerId: identity.playerId }) });
     identity.mediaMode = resumed.player?.mediaMode || identity.mediaMode || "png";
+    identity.nameFont = normalizeNameFont(resumed.player?.nameFont || identity.nameFont);
     identity.cameraFps = identity.cameraFps === 60 ? 60 : 30;
     identity.crop = normalizeCrop(identity.crop);
     localStorage.setItem(storageKey, JSON.stringify(identity));
@@ -860,6 +886,8 @@ async function runOverlay() {
       avatar.classList.toggle("speaking", Boolean(player.speaking));
       avatar.classList.remove("animation-none", "animation-bounce", "animation-pulse", "animation-shake", "animation-glow");
       avatar.classList.add(`animation-${["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none"}`);
+      avatar.classList.remove(...nameFontValues.map((font) => `font-${font}`));
+      avatar.classList.add(`font-${normalizeNameFont(player.nameFont)}`);
       avatar.style.setProperty("--accent", player.accent);
       avatar.querySelector(".avatar-name").textContent = player.name;
       if (player.mediaMode !== "webcam") {

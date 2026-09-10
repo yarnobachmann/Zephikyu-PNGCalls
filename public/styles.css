@@ -9,7 +9,7 @@
   --cyan: #ff667e;
   --danger: #ff8a9d;
   --radius: 22px;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   background: #080305;
   color: var(--ink);
 }
@@ -37,7 +37,7 @@ button { color: inherit; }
 
 .main { padding: 34px clamp(20px, 4vw, 58px) 64px; max-width: 1500px; width: 100%; margin: 0 auto; background: #0c090ad9; }
 .topbar { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
-h1 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2rem, 4vw, 3.5rem); font-weight: 500; letter-spacing: -.055em; line-height: .98; }
+h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; font-size: clamp(2rem, 4vw, 3.5rem); font-weight: 900; letter-spacing: -.045em; line-height: .98; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .btn { border: 2px solid #090708; background: #281a1f; padding: 11px 15px; border-radius: 14px 10px 14px 10px; cursor: pointer; font-weight: 700; transition: transform .16s ease, background .16s ease; }
 .btn { text-decoration: none; text-align: center; }
@@ -50,7 +50,7 @@ h1 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size:
 .card { background: #181315f2; border: 2px solid #090708; border-radius: 24px 15px 22px 13px; padding: 22px; box-shadow: 6px 7px 0 #090708; }
 .stack > .card:nth-child(even), .settings-grid > .card:nth-child(even) { border-radius: 18px 28px 16px 26px; }
 .card-head { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 18px; }
-.card h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 1.08rem; font-weight: 500; letter-spacing: -.015em; }
+.card h2 { margin: 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; font-size: 1.08rem; font-weight: 900; letter-spacing: -.02em; }
 .subtle { color: var(--muted); font-size: .875rem; line-height: 1.5; margin: 5px 0 0; }
 .badge { font: 500 .72rem ui-monospace, "Cascadia Mono", monospace; padding: 6px 9px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); white-space: nowrap; }
 .badge.live { color: var(--cyan); border-color: #ff667e55; background: #d0193c16; }
@@ -65,6 +65,11 @@ h1 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size:
 .avatar-name { position: absolute; bottom: 2px; background: #090305e8; border: 1px solid var(--line); padding: 7px 11px; border-radius: 99px; font-size: .8rem; }
 .avatar.webcam .avatar-name { position: static; margin-top: 10px; padding: 6px 12px; background: #12070bea; }
 .avatar.speaking .avatar-name { border-color: var(--accent, var(--acid)); }
+.font-rounded, .font-rounded .avatar-name { font-family: "Trebuchet MS", "Arial Rounded MT Bold", sans-serif; }
+.font-comic, .font-comic .avatar-name { font-family: "Comic Sans MS", "Segoe Print", cursive; }
+.font-typewriter, .font-typewriter .avatar-name { font-family: "Courier New", ui-monospace, monospace; }
+.font-classic, .font-classic .avatar-name { font-family: Georgia, "Times New Roman", serif; }
+.font-bold, .font-bold .avatar-name { font-family: Impact, "Arial Black", sans-serif; letter-spacing: .035em; text-transform: uppercase; }
 .preview.dark { background: #040203; background-image: none; }
 .preview.checker { background-color: #100509; }
 
@@ -96,11 +101,11 @@ h1 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size:
 .game-strip strong { color: var(--ink); border: 1px solid var(--line); border-radius: 99px; padding: 6px 9px; font-size: .72rem; }
 
 .join-page { position: relative; min-height: 100vh; display: grid; place-items: center; padding: 24px; background-color: #261a1d; background-image: url("/assets/studio/panels.png"); background-position: center; background-size: cover; background-blend-mode: multiply; }
-.join-page::before { content: ""; position: fixed; left: 2vw; bottom: 0; width: min(18vw, 230px); height: min(48vh, 430px); background: url("/assets/studio/mic.png") left bottom / contain no-repeat; opacity: .32; pointer-events: none; }
 .join-card { position: relative; z-index: 1; width: min(660px, 100%); background: #181315f5; border: 2px solid #090708; border-radius: 30px 19px 32px 16px; padding: clamp(24px, 5vw, 44px); box-shadow: 7px 8px 0 #090708; }
 .join-card .brand { margin-bottom: 52px; }
 .join-card h1 { margin-bottom: 18px; }
 .join-copy { color: var(--muted); line-height: 1.65; margin: 0 0 28px; }
+.font-preview { display: block; min-height: 38px; padding: 8px 12px; border-left: 4px solid var(--acid); background: #10090b; color: #fff3f5; font-size: 1.05rem; }
 .active-mic { text-align: center; }
 .active-mic .brand { justify-content: center; }
 .camera-preview { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 18px; border: 1px solid #6d1d2e; background: #050203; }
@@ -138,7 +143,6 @@ h1 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size:
 .studio-desk img { position: absolute; display: block; object-fit: contain; }
 .studio-desk-top { z-index: 3; left: 0; right: 0; bottom: 0; width: 100%; }
 .studio-chair { z-index: 1; right: 12%; bottom: 18px; width: 150px; height: 220px; }
-.studio-mic { z-index: 4; left: 4%; bottom: 32px; width: 105px; height: 190px; }
 .studio-foxy { z-index: 4; right: 36%; bottom: 91px; width: 58px; }
 .slash { color: var(--acid); }
 .welcome-panel { background: #8f1230f2; color: #fff4f5; padding: clamp(30px, 6vw, 80px); display: flex; flex-direction: column; justify-content: center; border-left: 3px solid #090708; }
@@ -149,13 +153,13 @@ h1 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size:
 .steps { display: grid; gap: 14px; margin-top: 36px; }
 .step { border-top: 1px solid #e04a64; padding-top: 13px; display: grid; grid-template-columns: 32px 1fr; gap: 10px; }
 
-.studio-shelf { position: relative; width: 188px; height: 202px; margin: auto auto 20px; }
+.studio-shelf { position: relative; width: 204px; height: 220px; margin: auto auto 20px; }
 .studio-shelf img { position: absolute; display: block; object-fit: contain; }
 .studio-shelves { inset: 0; width: 100%; height: 100%; }
-.shelf-monster { top: 7px; right: 39px; width: 17px; height: 46px; }
-.shelf-foxy { top: 58px; left: 21px; width: 38px; height: 49px; }
-.shelf-funko { left: 29px; bottom: 9px; width: 31px; height: 50px; }
-.shelf-mimikyu { right: 8px; bottom: 42px; width: 63px; height: 43px; }
+.shelf-monster { top: 68px; right: 42px; width: 17px; height: 46px; }
+.shelf-foxy { top: 55px; left: 52px; width: 38px; height: 49px; }
+.shelf-funko { left: 48px; bottom: 13px; width: 31px; height: 50px; }
+.shelf-mimikyu { right: 24px; bottom: 47px; width: 58px; height: 40px; }
 
 .overlay-page { width: 100vw; height: 100vh; overflow: hidden; background: transparent; }
 .overlay-stage { width: 100%; height: 100%; display: flex; justify-content: center; align-items: end; gap: 2vw; padding: 2vh 2vw; }
@@ -196,8 +200,8 @@ h1 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size:
 .auth-crest::after { content: ""; position: absolute; inset: 0; background: #08030566; pointer-events: none; }
 .auth-banner { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; filter: saturate(.78) contrast(1.08) brightness(.72); }
 .auth-banner-copy { position: relative; z-index: 1; padding: clamp(44px, 8vw, 120px); }
-.auth-crest h1 { position: relative; z-index: 1; max-width: 700px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(4rem, 9vw, 8rem); font-weight: 400; text-shadow: 0 4px 32px #000; }
-.auth-crest p, .auth-crest .eyebrow { position: relative; z-index: 1; text-shadow: 0 2px 18px #000; }
+.auth-crest h1 { position: relative; z-index: 1; max-width: 700px; font-family: "Arial Black", "Trebuchet MS", sans-serif; font-size: clamp(4rem, 9vw, 8rem); font-weight: 900; }
+.auth-crest p, .auth-crest .eyebrow { position: relative; z-index: 1; }
 .auth-crest p { color: var(--muted); font-size: 1.05rem; }
 .auth-panel { padding: clamp(34px, 6vw, 84px); display: flex; flex-direction: column; justify-content: center; gap: 70px; border-left: 1px solid var(--line); background: #10070a; }
 .auth-panel h2 { margin: 8px 0; font-size: clamp(2rem, 4vw, 3.2rem); letter-spacing: -.055em; }

@@ -47,6 +47,7 @@ model Player {
   talkingImage      String?
   mediaMode         String    @default("png")
   speakingAnimation String    @default("none")
+  nameFont          String    @default("rounded")
   room              Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
   presence          Presence?
 
