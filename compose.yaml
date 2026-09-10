@@ -1,0 +1,26 @@
+services:
+  pngcalls:
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "4173:4173"
+    environment:
+      PUBLIC_URL: "http://localhost:4173"
+      DATABASE_URL: "file:../data/zephikyu.db"
+      DISCORD_CLIENT_ID: ""
+      DISCORD_CLIENT_SECRET: ""
+      DISCORD_REDIRECT_URI: "http://localhost:4173/auth/discord/callback"
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

@@ -1,0 +1,54 @@
+services:
+  pngcalls:
+    build:
+      context: .
+    restart: unless-stopped
+    init: true
+    expose:
+      - "4173"
+    environment:
+      NODE_ENV: "production"
+      PUBLIC_URL: "https://${PNGCALLS_DOMAIN:?Set PNGCALLS_DOMAIN in .env.proxmox}"
+      DATABASE_URL: "file:../data/zephikyu.db"
+      DISCORD_CLIENT_ID: "${DISCORD_CLIENT_ID:-}"
+      DISCORD_CLIENT_SECRET: "${DISCORD_CLIENT_SECRET:-}"
+      DISCORD_REDIRECT_URI: "${DISCORD_REDIRECT_URI:-https://${PNGCALLS_DOMAIN}/auth/discord/callback}"
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      pngcalls:
+        condition: service_healthy
+    environment:
+      PNGCALLS_DOMAIN: "${PNGCALLS_DOMAIN}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  caddy_data:
+  caddy_config:

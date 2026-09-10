@@ -1,0 +1,8 @@
+node_modules/
+data/
+uploads/
+.env
+.env.proxmox
+*.user
+mod/RepoReactiveBridge/bin/
+mod/RepoReactiveBridge/obj/

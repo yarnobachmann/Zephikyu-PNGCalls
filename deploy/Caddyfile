@@ -1,0 +1,5 @@
+{$PNGCALLS_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy pngcalls:4173
+  header -Server
+}

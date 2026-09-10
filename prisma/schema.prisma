@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Owner {
+  id           Int      @id @default(1)
+  username     String   @unique
+  salt         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+model HostSession {
+  id        String   @id
+  csrfHash  String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  ipHash    String?
+  userAgent String?
+}
+
+model Room {
+  id           String   @id
+  name         String
+  overlayToken String   @unique
+  joinToken    String   @unique
+  layout       String   @default("row")
+  background   String   @default("transparent")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  players      Player[]
+}
+
+model Player {
+  id           String    @id
+  roomId       String
+  name         String
+  accent       String    @default("#d0193c")
+  pinned       Boolean   @default(false)
+  joinKey      String?
+  idleImage    String?
+  talkingImage String?
+  mediaMode    String    @default("png")
+  room         Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  presence     Presence?
+
+  @@index([roomId])
+}
+
+model DiscordConnection {
+  id            Int      @id @default(1)
+  discordUserId String   @unique
+  username      String
+  connectedAt   DateTime @default(now())
+}
+
+model Presence {
+  playerId String   @id
+  present  Boolean  @default(true)
+  speaking Boolean  @default(false)
+  muted    Boolean  @default(false)
+  source   String   @default("browser")
+  lastSeen DateTime @default(now())
+  player   Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+}
+
+model AuditEvent {
+  id        Int      @id @default(autoincrement())
+  action    String
+  outcome   String
+  actor     String
+  target    String?
+  ipHash    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
