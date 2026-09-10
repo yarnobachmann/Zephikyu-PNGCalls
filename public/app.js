@@ -265,15 +265,33 @@ function brandMarkup() {
   return `<div class="brand"><img class="brand-gif" src="/assets/zeph.gif" alt="Zephikyu" /><span>Zephikyu <i>PNGCalls</i></span></div>`;
 }
 
-function studioShelfMarkup() {
-  return `<div class="studio-shelf" aria-hidden="true">
+function studioShelfMarkup(extraClass = "") {
+  return `<div class="studio-shelf ${extraClass}" aria-label="Studio sound shelf">
     <img class="studio-shelves" src="/assets/studio/shelves.png" alt="" />
-    <img class="shelf-monster" src="/assets/studio/monster.png" alt="" />
-    <img class="shelf-foxy" src="/assets/studio/foxy.png" alt="" />
-    <img class="shelf-funko" src="/assets/studio/funko.png" alt="" />
-    <img class="shelf-mimikyu" src="/assets/studio/mimikyu-head.png" alt="" />
+    <button class="shelf-item shelf-monster" type="button" data-shelf-sound="/assets/studio/monster-drink.mp3" aria-label="Play Monster can sound"><img src="/assets/studio/monster.png" alt="" /></button>
+    <button class="shelf-item shelf-foxy" type="button" data-shelf-sound="/assets/studio/foxy-scream.mp3" aria-label="Play Foxy sound"><img src="/assets/studio/foxy.png" alt="" /></button>
+    <button class="shelf-item shelf-funko" type="button" data-shelf-sound="/assets/studio/funko-voice.mp3" aria-label="Play Funko sound"><img src="/assets/studio/funko.png" alt="" /></button>
+    <button class="shelf-item shelf-mimikyu" type="button" data-shelf-sound="/assets/studio/mimikyu-cry.mp3" aria-label="Play Mimikyu sound"><img src="/assets/studio/mimikyu-head.png" alt="" /></button>
   </div>`;
 }
+
+let shelfAudio = null;
+document.addEventListener("click", (event) => {
+  const item = event.target.closest("[data-shelf-sound]");
+  if (!item) return;
+  if (shelfAudio) {
+    shelfAudio.pause();
+    shelfAudio.currentTime = 0;
+  }
+  document.querySelectorAll(".shelf-item.playing").forEach((node) => node.classList.remove("playing"));
+  shelfAudio = new Audio(item.dataset.shelfSound);
+  item.classList.add("playing");
+  shelfAudio.addEventListener("ended", () => item.classList.remove("playing"), { once: true });
+  shelfAudio.play().catch(() => {
+    item.classList.remove("playing");
+    toast("Your browser blocked the sound. Press the item again.");
+  });
+});
 
 function studioDeskMarkup() {
   return `<div class="studio-desk" aria-hidden="true">
@@ -392,7 +410,7 @@ function renderDashboard() {
       </div></section>
       <section class="view-panel ${activeView === "players" ? "active" : ""}" data-panel="players">
         <div class="section-heading"><div><div class="eyebrow">Open invitation</div><h2>Player room</h2></div><button id="copy-join-room" class="btn primary">Copy invite link</button></div>
-        <div class="room-callout"><div><span class="room-number">${session.onlineCount}</span><span>online now</span></div><p>Guests do not create accounts. They open your private link, choose PNG or webcam mode, and grant the required browser permissions.</p></div>
+        <div class="room-callout"><div><span class="room-number">${session.onlineCount}</span><span>online now</span></div><p>Guests do not create accounts. They open your private link, choose PNG or webcam mode, and grant the required browser permissions.</p><button id="reset-player-link" class="btn danger" type="button">Reset for a new stream</button></div>
         <section class="card"><div class="card-head"><div><h2>Invitation link</h2><p class="subtle">Anyone with this link can join this overlay.</p></div></div><div class="copy-field"><input class="input mono" value="${escapeHtml(joinUrl)}" readonly /><button id="copy-join-room-2" class="btn">Copy</button></div></section>
         <section class="card room-list"><div class="card-head"><div><h2>Room roster</h2><p class="subtle">Connected guests appear automatically.</p></div><span class="badge">${players.length} TOTAL</span></div><div class="player-list">${players.length ? players.map((player) => `<div class="player-row"><div class="player-meta"><div class="player-name">${escapeHtml(player.name)}</div><div class="player-id">${player.source === "browser" ? "Guest browser" : "Added by host"}</div></div><div class="row-actions"><button class="icon-btn edit" data-id="${escapeHtml(player.id)}" title="Edit player">✎</button></div></div>`).join("") : `<div class="empty">No players have joined yet.</div>`}</div></section>
       </section>
@@ -421,6 +439,19 @@ function renderDashboard() {
   document.querySelector("#copy-join-room").onclick = copyJoin;
   document.querySelector("#copy-join-room-2").onclick = copyJoin;
   document.querySelector("#copy-overlay").onclick = () => navigator.clipboard.writeText(overlayUrl).then(() => toast("OBS link copied"));
+  document.querySelector("#reset-player-link").onclick = async () => {
+    if (!confirm("Reset the player invite link and remove all invited guests? Your OBS browser source will stay the same.")) return;
+    const button = document.querySelector("#reset-player-link");
+    button.disabled = true;
+    try {
+      session = await api(`/api/sessions/${session.id}/reset-join`, { method: "POST" });
+      toast("New player link ready");
+      renderDashboard();
+    } catch (error) {
+      button.disabled = false;
+      toast(error.message);
+    }
+  };
   document.querySelector("#add-player").onclick = () => showPlayerModal();
   document.querySelectorAll(".edit").forEach((button) => button.onclick = () => showPlayerModal(players.find((player) => player.id === button.dataset.id)));
   document.querySelectorAll(".mic").forEach((button) => {
@@ -568,6 +599,7 @@ async function runJoin() {
 
   const renderForm = () => {
     app.innerHTML = `<main class="join-page">
+      ${studioShelfMarkup("join-studio-shelf")}
       <section class="join-card">
         ${brandMarkup()}
         <div class="eyebrow">Player setup</div>
@@ -731,7 +763,7 @@ async function runJoin() {
 
 async function startMic(id, joinToken, identity, storageKey) {
   const useWebcam = identity.mediaMode === "webcam";
-  app.innerHTML = `<main class="join-page"><section class="join-card active-mic">
+  app.innerHTML = `<main class="join-page">${studioShelfMarkup("join-studio-shelf")}<section class="join-card active-mic">
     ${brandMarkup()}
     <div class="eyebrow">Connected as ${escapeHtml(identity.name)}</div>
     <h1>Keep this tab open</h1>

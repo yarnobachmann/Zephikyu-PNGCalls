@@ -403,6 +403,27 @@ app.patch("/api/sessions/:sessionId", requireHost, requireCsrf, async (req, res)
   await audit(req, "room.update", "success", current.id); await broadcast(current.id);
   res.json(await roomPayload(current.id));
 });
+app.post("/api/sessions/:sessionId/reset-join", requireHost, requireCsrf, async (req, res) => {
+  const room = await getRoom(req, res); if (!room) return;
+  const guestPlayers = room.players.filter((player) => player.presence?.source === "browser");
+  const nextJoinToken = token(32);
+  await prisma.$transaction([
+    prisma.player.deleteMany({ where: { id: { in: guestPlayers.map((player) => player.id) } } }),
+    prisma.room.update({ where: { id: room.id }, data: { joinToken: nextJoinToken, updatedAt: new Date() } }),
+  ]);
+  for (const player of guestPlayers) {
+    removeUploadedFile(player.idleImage);
+    removeUploadedFile(player.talkingImage);
+    removeWebcamFile(room.id, player.id);
+    const key = webcamKey(room.id, player.id);
+    webcamPublishers.get(key)?.close(1000, "Player link reset");
+    for (const viewer of webcamViewers.get(key) || []) viewer.close(1000, "Player link reset");
+  }
+  await audit(req, "room.reset_join", "success", room.id);
+  await broadcast(room.id);
+  const updated = await prisma.room.findUnique({ where: { id: room.id }, include: { players: { include: { presence: true } } } });
+  res.json({ ...publicRoom(updated), joinToken: nextJoinToken, overlayToken: room.overlayToken });
+});
 app.put("/api/sessions/:sessionId/players/:playerId", requireHost, requireCsrf, async (req, res) => {
   const room = await getRoom(req, res); if (!room) return;
   const id = cleanId(req.params.playerId);

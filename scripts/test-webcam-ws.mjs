@@ -110,7 +110,25 @@ try {
   jpeg[jpeg.length - 1] = 0xd9;
   publisher.send(jpeg);
   assert.deepEqual(await received, jpeg);
-  console.log("Discord settings and webcam WebSocket transport passed");
+
+  const resetResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/reset-join`, {
+    method: "POST",
+    headers: { Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
+  });
+  assert.equal(resetResponse.status, 200);
+  const resetRoom = await resetResponse.json();
+  assert.equal(resetRoom.overlayToken, room.overlayToken);
+  assert.notEqual(resetRoom.joinToken, room.joinToken);
+  assert.equal(resetRoom.players.length, 0);
+  const oldInviteResponse = await fetch(`${baseUrl}/api/join/${room.sessionId}/${room.joinToken}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Old link" }),
+  });
+  assert.equal(oldInviteResponse.status, 401);
+  const unchangedOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`);
+  assert.equal(unchangedOverlay.status, 200);
+  console.log("Discord settings, webcam transport, guest fonts, and invite reset passed");
 } finally {
   publisher?.terminate();
   viewer?.terminate();
