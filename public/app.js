@@ -93,7 +93,7 @@ setInterval(() => {
     nextFrame.onerror = () => { delete image.dataset.webcamLoading; };
     nextFrame.src = `${image.dataset.webcamSrc}?v=${Date.now()}`;
   });
-}, 100);
+}, 67);
 
 async function api(url, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
@@ -477,7 +477,7 @@ async function runJoin() {
             ${cropControlsMarkup(true)}
             <p id="camera-status" class="hint">Start OBS Virtual Camera, then press Find cameras. If the default camera is busy, you can still choose another detected source.</p>
           </section>
-          <p id="webcam-note" class="hint" hidden>Your camera is sent at up to 10 frames per second. PNGCalls replaces the latest frame and does not make a video recording.</p>
+          <p id="webcam-note" class="hint" hidden>Your camera is sent at up to 15 frames per second. PNGCalls replaces the latest frame and does not make a video recording.</p>
           <div class="field"><label>Speaking accent</label><input class="input" name="accent" type="color" value="#d0193c" /><span class="hint">Used for the name outline, webcam border, and glow while speaking.</span></div>
           <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input" disabled><option value="bounce">Bounce</option><option value="pulse">Pulse</option><option value="shake">Shake</option><option value="glow">Glow</option></select></div></div>
           <button class="btn primary" type="submit">Join and enable microphone</button>
@@ -689,7 +689,7 @@ async function startMic(id, joinToken, identity, storageKey) {
         } catch {}
         sendingFrame = false;
       }, "image/jpeg", 0.72);
-    }, 100);
+    }, 67);
   }
 
   const audioContext = new AudioContext();

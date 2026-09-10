@@ -110,7 +110,7 @@ This approach is game-neutral. It cannot automatically read the roster inside a 
 
 ## Webcam mode
 
-Webcam mode captures camera frames in the guest browser, compresses them as JPEG, and sends them only to this self-hosted server. The latest frame is overwritten instead of recorded as a video. Webcam delivery targets up to 10 frames per second at 640 by 360 pixels. For full-motion video across the internet, a later WebRTC and TURN deployment would be the appropriate upgrade.
+Webcam mode captures camera frames in the guest browser, compresses them as JPEG, and sends them only to this self-hosted server. The latest frame is overwritten instead of recorded as a video. Webcam delivery targets up to 15 frames per second at 640 by 360 pixels. For full-motion video across the internet, a later WebRTC and TURN deployment would be the appropriate upgrade.
 
 ### OBS Virtual Camera
 
