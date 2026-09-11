@@ -1,0 +1,1 @@
+ALTER TABLE "Player" ADD COLUMN "nameVisible" BOOLEAN NOT NULL DEFAULT true;

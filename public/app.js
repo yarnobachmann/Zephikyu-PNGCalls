@@ -44,7 +44,7 @@ const namePositionPresets = {
 };
 const namePositionOptions = (selected = "current", includeCurrent = true) => [
   ...(includeCurrent ? [["current", "Keep current position"]] : []),
-  ["overlay", "On the image"], ["below", "Below"], ["above", "Above"], ["left", "Left side"], ["right", "Right side"],
+  ["overlay", "On the image"], ["below", "Below"], ["above", "Above"], ["left", "Left side"], ["right", "Right side"], ["hidden", "Hidden"],
 ].map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
 const storedJson = (key, fallback = null) => {
   try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; }
@@ -125,11 +125,21 @@ function avatarMarkup(player) {
   const nameY = clamp(player.nameOffsetY || 0, -100, 100);
   const layer = Math.round(clamp(player.displayLayer || 0, 0, 1000));
   const nameBackgroundClass = player.nameBackground === "none" ? " no-background" : "";
-  return `<article class="avatar font-${font} ${positioned ? "custom-position" : ""} ${isWebcam ? "webcam" : ""} ${player.idleTransparent === false ? "idle-opaque" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)};--x:${x}%;--y:${y}%;--size:${size};--layer:${layer};--name-size:${nameSize};--name-x:${nameX}cqw;--name-y:${nameY}cqh;--name-bg:${escapeHtml(player.nameBackgroundColor || "#090305")}">
-    <div class="avatar-visual">${isWebcam && player.localWebcamPreview ? `<canvas id="camera-output-preview" class="avatar-img webcam-img" width="640" height="360" aria-label="${escapeHtml(player.name)} camera preview"></canvas>` : isWebcam && player.webcamImage ? `<img class="avatar-img webcam-img" src="${escapeHtml(player.webcamImage)}?v=${Date.now()}" data-webcam-src="${escapeHtml(player.webcamImage)}" alt="${escapeHtml(player.name)} webcam" />` : idleImage ? `<img class="avatar-img avatar-img-idle" src="${escapeHtml(idleImage)}" alt="" /><img class="avatar-img avatar-img-talking" src="${escapeHtml(talkingImage)}" alt="${escapeHtml(player.name)}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}</div>
+  return `<article class="avatar font-${font} ${positioned ? "custom-position" : ""} ${isWebcam ? "webcam" : ""} ${player.idleTransparent === false ? "idle-opaque" : ""} ${player.nameVisible === false ? "name-hidden" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" data-speaking="${player.speaking ? "true" : "false"}" style="--accent:${escapeHtml(player.accent)};--x:${x}%;--y:${y}%;--size:${size};--layer:${layer};--name-size:${nameSize};--name-x:${nameX}cqw;--name-y:${nameY}cqh;--name-bg:${escapeHtml(player.nameBackgroundColor || "#090305")}">
+    <div class="avatar-visual">${isWebcam && player.localWebcamPreview ? `<canvas id="camera-output-preview" class="avatar-img webcam-img" width="640" height="360" aria-label="${escapeHtml(player.name)} camera preview"></canvas>` : isWebcam && player.webcamImage ? `<img class="avatar-img webcam-img" src="${escapeHtml(player.webcamImage)}?v=${Date.now()}" data-webcam-src="${escapeHtml(player.webcamImage)}" alt="${escapeHtml(player.name)} webcam" />` : idleImage ? `<img class="avatar-img avatar-img-idle" src="${escapeHtml(idleImage)}" data-source="${escapeHtml(idleImage)}" alt="" /><img class="avatar-img avatar-img-talking" src="${escapeHtml(talkingImage)}" data-source="${escapeHtml(talkingImage)}" alt="${escapeHtml(player.name)}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}</div>
     <div class="avatar-name${nameBackgroundClass}" title="Drag to move the name">${escapeHtml(player.name)}</div>
     <button class="avatar-resize" type="button" aria-label="Resize ${escapeHtml(player.name)}" title="Drag to resize">↘</button>
   </article>`;
+}
+
+function restartTalkingGif(avatar, source) {
+  if (!avatar || !/\.gif(?:$|[?#])/i.test(source || "")) return;
+  const image = avatar.querySelector(".avatar-img-talking");
+  if (!image) return;
+  const restarted = image.cloneNode(true);
+  restarted.dataset.source = source;
+  restarted.src = `${source}${source.includes("#") ? "&" : "#"}pngcalls-${Date.now()}`;
+  image.replaceWith(restarted);
 }
 
 setInterval(() => {
@@ -218,12 +228,12 @@ function toast(message) {
 }
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
-const tutorialRevision = "7";
+const tutorialRevision = "8";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
     ["input[name='name']", "Enter your display name. PNGCalls remembers it and the other setup choices on this device."],
     ["#name-font", "Choose from the expanded font collection. Your selection is used in the room and OBS and is remembered."],
-    ["#join-name-position", "Place your name on, below, above, left, or right of your avatar. The host can still fine tune it later."],
+    ["#join-name-position", "Place your name on, below, above, or beside your avatar, or hide it completely. The host can still fine tune it later."],
     ["#media-mode", "Choose PNG images or Webcam. Selecting Webcam hides the PNG uploads and opens the camera setup."],
     ["#png-fields", "Choose separate idle and talking images. Both are fitted into the same frame, preloaded, and crossfade smoothly when you speak."],
     ["#find-microphones", "Find microphones, then choose the exact input PNGCalls should use. Your choice is remembered on this device."],
@@ -234,11 +244,11 @@ function tutorialSteps() {
   ];
   if (isJoin) return [
     ["#guest-live-preview", "This is how you appear in the overlay. Speak to test the talking image, accent, name, and animation live."],
-    ["#guest-name-controls", "Fine tune your name here. Change its font and use the sliders to move or resize it while watching the live preview."],
+    ["#guest-name-controls", "Fine tune your name here. Change its font, hide it if wanted, and use the sliders to move or resize it while watching the live preview."],
     ["#camera-output-preview", "This is the exact camera crop sent to the overlay."],
     ["#crop-controls", "Adjust zoom and position here. Changes are saved on this device."],
     [".meter", "The meter shows microphone activity. Your speaking state changes automatically."],
-    ["#leave-room", "Forget this room disconnects this browser from the saved player profile. Use it only when you want to set up again from scratch."],
+    ["#leave-room", "Leave the overlay without losing your images, name settings, or saved position. You can explicitly forget the setup afterward if needed."],
   ];
   if (document.querySelector("#auth-form")) return [];
   if (document.querySelector("#create-form")) return [
@@ -438,8 +448,11 @@ function hasCustomPlacement(players = []) {
 }
 
 function applyPlayerState(avatar, player, includePlacement = true) {
+  const wasSpeaking = avatar.dataset.speaking === "true";
+  avatar.dataset.speaking = player.speaking ? "true" : "false";
   avatar.classList.toggle("speaking", Boolean(player.speaking));
   avatar.classList.toggle("idle-opaque", player.idleTransparent === false);
+  avatar.classList.toggle("name-hidden", player.nameVisible === false);
   avatar.classList.remove("animation-none", "animation-bounce", "animation-pulse", "animation-shake", "animation-glow");
   avatar.classList.add(`animation-${["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none"}`);
   avatar.classList.remove(...nameFontValues.map((font) => `font-${font}`));
@@ -466,8 +479,9 @@ function applyPlayerState(avatar, player, includePlacement = true) {
     const talkingSource = player.talkingImage || idleSource;
     const idleImage = avatar.querySelector(".avatar-img-idle");
     const talkingImage = avatar.querySelector(".avatar-img-talking");
-    if (idleImage && idleSource && idleImage.getAttribute("src") !== idleSource) idleImage.src = idleSource;
-    if (talkingImage && talkingSource && talkingImage.getAttribute("src") !== talkingSource) talkingImage.src = talkingSource;
+    if (idleImage && idleSource && idleImage.dataset.source !== idleSource) { idleImage.dataset.source = idleSource; idleImage.src = idleSource; }
+    if (talkingImage && talkingSource && talkingImage.dataset.source !== talkingSource) { talkingImage.dataset.source = talkingSource; talkingImage.src = talkingSource; }
+    if (player.speaking && !wasSpeaking) restartTalkingGif(avatar, talkingSource);
   }
 }
 
@@ -490,7 +504,7 @@ function syncDashboardLive(data) {
     const current = session.players[index];
     const avatar = preview?.querySelector(`.avatar[data-player-id="${CSS.escape(current.id)}"]`);
     const draftPlacement = avatar?.classList.contains("dragging") ? {
-      positionX: current.positionX, positionY: current.positionY, displaySize: current.displaySize, displayLayer: current.displayLayer, nameSize: current.nameSize, nameOffsetX: current.nameOffsetX, nameOffsetY: current.nameOffsetY,
+      positionX: current.positionX, positionY: current.positionY, displaySize: current.displaySize, displayLayer: current.displayLayer, nameSize: current.nameSize, nameOffsetX: current.nameOffsetX, nameOffsetY: current.nameOffsetY, nameVisible: current.nameVisible,
     } : null;
     Object.assign(current, incoming, draftPlacement || {});
   });
@@ -537,6 +551,7 @@ const placementPayload = (players) => players.map((player) => ({
   nameSize: clamp(player.nameSize || 1, 0.5, 3),
   nameX: clamp(player.nameOffsetX || 0, -100, 100),
   nameY: clamp(player.nameOffsetY || 0, -100, 100),
+  nameVisible: player.nameVisible !== false,
   idleTransparent: player.idleTransparent !== false,
 }));
 
@@ -583,7 +598,7 @@ function bindPlacementEditor() {
     resetButton.disabled = true;
     try {
       await api(`/api/sessions/${session.id}/placements`, { method: "PUT", body: JSON.stringify({ reset: true }) });
-      session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0 }));
+      session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0, nameVisible: true }));
       placementEditing = false;
       selectedPlacementId = null;
       renderDashboard();
@@ -617,6 +632,7 @@ function bindPlacementEditor() {
     nameSizeOutput.textContent = `${Math.round(Number(nameSizeInput.value) * 100)}%`;
     selectedName.textContent = `Arrange ${player.name}`;
     if (idleAppearanceInput) idleAppearanceInput.value = player.idleTransparent === false ? "solid" : "faded";
+    if (namePositionInput) namePositionInput.value = player.nameVisible === false ? "hidden" : "current";
     if (idleAppearanceRow) idleAppearanceRow.hidden = player.mediaMode === "webcam";
     preview.querySelectorAll(".avatar").forEach((entry) => entry.classList.toggle("placement-selected", entry.dataset.playerId === player.id));
   };
@@ -657,11 +673,20 @@ function bindPlacementEditor() {
   }
   if (namePositionInput) namePositionInput.onchange = () => {
     const player = selectedPlayer();
+    if (!player) return;
+    if (namePositionInput.value === "hidden") {
+      player.nameVisible = false;
+      preview.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`)?.classList.add("name-hidden");
+      savePlacements([player]).catch((error) => toast(error.message));
+      return;
+    }
     const preset = namePositionPresets[namePositionInput.value];
-    if (!player || !preset) return;
+    if (!preset) return;
+    player.nameVisible = true;
     player.nameOffsetX = preset.x;
     player.nameOffsetY = preset.y;
     const avatar = preview.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`);
+    avatar?.classList.remove("name-hidden");
     avatar?.style.setProperty("--name-x", `${player.nameOffsetX}cqw`);
     avatar?.style.setProperty("--name-y", `${player.nameOffsetY}cqh`);
     namePositionInput.value = "current";
@@ -769,7 +794,7 @@ async function chooseAutomaticLayout(layout) {
   const secrets = { joinToken: session.joinToken, overlayToken: session.overlayToken };
   session = await api(`/api/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ layout }) });
   Object.assign(session, secrets);
-  session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0 }));
+  session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0, nameVisible: true }));
   placementEditing = false;
   selectedPlacementId = null;
   renderDashboard();
@@ -972,7 +997,7 @@ function showPlayerModal(player = null) {
     <div class="field"><label>Stable player ID</label><input name="id" class="input mono" required value="${escapeHtml(player?.id || "")}" ${player ? "readonly" : ""} placeholder="player-name" /></div>
     <div class="field"><label>Display name</label><input name="name" class="input" required value="${escapeHtml(player?.name || "")}" placeholder="Player name" /></div>
     <div class="field"><label>Name font</label><select name="nameFont" class="input font-choice font-${normalizeNameFont(player?.nameFont)}">${nameFontOptions(normalizeNameFont(player?.nameFont))}</select></div>
-    <div class="field"><label>Name position</label><select name="namePosition" class="input">${namePositionOptions()}</select><span class="hint">Choose a preset here, then fine tune it by dragging the name in Arrange players.</span></div>
+    <div class="field"><label>Name position</label><select name="namePosition" class="input">${namePositionOptions(player?.nameVisible === false ? "hidden" : "current")}</select><span class="hint">Choose a preset or hide the name, then fine tune it by dragging the name in Arrange players.</span></div>
     <div class="two-col"><div class="field"><label>Name background</label><select name="nameBackground" class="input"><option value="solid" ${player?.nameBackground !== "none" ? "selected" : ""}>Background color</option><option value="none" ${player?.nameBackground === "none" ? "selected" : ""}>No background</option></select></div><div class="field"><label>Background color</label><input name="nameBackgroundColor" class="input" type="color" value="${escapeHtml(player?.nameBackgroundColor || "#090305")}" /></div></div>
     <div class="two-col"><div class="field"><label>Idle image</label><input name="idle" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div><div class="field"><label>Talking image</label><input name="talking" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
     ${player?.source === "discord" ? `<label class="check-row"><input name="useDiscordAvatar" type="checkbox" ${player.useDiscordAvatar !== false ? "checked" : ""} /><span>Use this person's Discord profile picture when no custom image is set</span></label>` : ""}
@@ -993,7 +1018,7 @@ function showPlayerModal(player = null) {
     const form = new FormData(event.currentTarget);
     const id = form.get("id");
     const positionPreset = namePositionPresets[form.get("namePosition")];
-    await api(`/api/sessions/${session.id}/players/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ name: form.get("name"), nameFont: form.get("nameFont"), nameBackground: form.get("nameBackground"), nameBackgroundColor: form.get("nameBackgroundColor"), ...(positionPreset ? { nameOffsetX: positionPreset.x, nameOffsetY: positionPreset.y } : {}), accent: form.get("accent"), pinned: true, speakingAnimation: form.get("animateSpeaking") ? form.get("speakingAnimation") : "none", ...(player?.source === "discord" ? { useDiscordAvatar: Boolean(form.get("useDiscordAvatar")) } : {}) }) });
+    await api(`/api/sessions/${session.id}/players/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ name: form.get("name"), nameFont: form.get("nameFont"), nameBackground: form.get("nameBackground"), nameBackgroundColor: form.get("nameBackgroundColor"), nameVisible: form.get("namePosition") !== "hidden", ...(positionPreset ? { nameOffsetX: positionPreset.x, nameOffsetY: positionPreset.y } : {}), accent: form.get("accent"), pinned: true, speakingAnimation: form.get("animateSpeaking") ? form.get("speakingAnimation") : "none", ...(player?.source === "discord" ? { useDiscordAvatar: Boolean(form.get("useDiscordAvatar")) } : {}) }) });
     if (form.get("idle")?.size || form.get("talking")?.size) {
       const images = new FormData();
       if (form.get("idle")?.size) images.append("idle", form.get("idle"));
@@ -1050,6 +1075,29 @@ async function runJoin() {
   let draft = storedJson(draftKey, {});
   let cameraPreviewStream = null;
   let cropPreviewAnimation = 0;
+
+  const restoredIdentity = (player, previous = {}) => ({
+    ...previous,
+    playerId: player.id,
+    name: player.name || previous.name || "Player",
+    nameFont: normalizeNameFont(player.nameFont || previous.nameFont),
+    namePosition: player.nameVisible === false ? "hidden" : previous.namePosition || "below",
+    nameOffsetX: player.nameOffsetX ?? previous.nameOffsetX ?? 0,
+    nameOffsetY: player.nameOffsetY ?? previous.nameOffsetY ?? 8,
+    nameSize: player.nameSize ?? previous.nameSize ?? 1,
+    nameVisible: player.nameVisible !== false,
+    nameBackground: player.nameBackground || previous.nameBackground || "solid",
+    nameBackgroundColor: player.nameBackgroundColor || previous.nameBackgroundColor || "#090305",
+    accent: player.accent || previous.accent || "#d0193c",
+    speakingAnimation: player.speakingAnimation || previous.speakingAnimation || "none",
+    mediaMode: player.mediaMode || previous.mediaMode || "png",
+    idleImage: player.idleImage || previous.idleImage || "",
+    talkingImage: player.talkingImage || previous.talkingImage || player.idleImage || previous.idleImage || "",
+    microphoneDeviceId: String(previous.microphoneDeviceId || ""),
+    cameraDeviceId: String(previous.cameraDeviceId || ""),
+    cameraFps: previous.cameraFps === 60 ? 60 : 30,
+    crop: normalizeCrop(previous.crop),
+  });
 
   const stopCameraPreview = () => {
     cancelAnimationFrame(cropPreviewAnimation);
@@ -1121,7 +1169,7 @@ async function runJoin() {
       draft = {
         name: String(form.get("name") || ""),
         nameFont: normalizeNameFont(form.get("nameFont")),
-        namePosition: namePositionPresets[form.get("namePosition")] ? form.get("namePosition") : "below",
+        namePosition: (namePositionPresets[form.get("namePosition")] || form.get("namePosition") === "hidden") ? form.get("namePosition") : "below",
         mediaMode: form.get("mediaMode") === "webcam" ? "webcam" : "png",
         accent: String(form.get("accent") || "#d0193c"),
         speakingAnimation: form.get("animateSpeaking") ? String(form.get("speakingAnimation") || "bounce") : "none",
@@ -1223,16 +1271,18 @@ async function runJoin() {
         const form = new FormData(event.currentTarget);
         const mediaMode = form.get("mediaMode");
         const speakingAnimation = form.get("animateSpeaking") ? form.get("speakingAnimation") : "none";
-        const namePosition = namePositionPresets[form.get("namePosition")] || namePositionPresets.below;
+        const selectedNamePosition = form.get("namePosition");
+        const namePosition = namePositionPresets[selectedNamePosition] || namePositionPresets.below;
         saveDraft();
-        const joined = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ name: form.get("name"), nameFont: normalizeNameFont(form.get("nameFont")), nameOffsetX: namePosition.x, nameOffsetY: namePosition.y, accent: form.get("accent"), mediaMode, speakingAnimation }) });
+        const joined = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ name: form.get("name"), nameFont: normalizeNameFont(form.get("nameFont")), nameVisible: selectedNamePosition !== "hidden", nameOffsetX: namePosition.x, nameOffsetY: namePosition.y, accent: form.get("accent"), mediaMode, speakingAnimation }) });
         identity = {
           playerId: joined.playerId,
           name: form.get("name"),
           nameFont: normalizeNameFont(form.get("nameFont")),
-          namePosition: form.get("namePosition"),
+          namePosition: selectedNamePosition,
           nameOffsetX: namePosition.x,
           nameOffsetY: namePosition.y,
+          nameVisible: selectedNamePosition !== "hidden",
           accent: form.get("accent"),
           speakingAnimation,
           mediaMode,
@@ -1262,24 +1312,19 @@ async function runJoin() {
     };
   };
 
-  if (!identity) return renderForm();
+  if (!identity) {
+    try {
+      const resumed = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ resumeOnly: true }) });
+      identity = restoredIdentity(resumed.player);
+      localStorage.setItem(storageKey, JSON.stringify(identity));
+      return startMic(id, joinToken, identity, storageKey);
+    } catch {
+      return renderForm();
+    }
+  }
   try {
     const resumed = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ playerId: identity.playerId }) });
-    identity.mediaMode = resumed.player?.mediaMode || identity.mediaMode || "png";
-    identity.name = resumed.player?.name || identity.name;
-    identity.nameFont = normalizeNameFont(resumed.player?.nameFont || identity.nameFont);
-    identity.accent = resumed.player?.accent || identity.accent;
-    identity.speakingAnimation = resumed.player?.speakingAnimation || identity.speakingAnimation || "none";
-    identity.idleImage = resumed.player?.idleImage || identity.idleImage || "";
-    identity.talkingImage = resumed.player?.talkingImage || identity.talkingImage || identity.idleImage;
-    identity.nameOffsetX = resumed.player?.nameOffsetX ?? identity.nameOffsetX ?? 0;
-    identity.nameOffsetY = resumed.player?.nameOffsetY ?? identity.nameOffsetY ?? 8;
-    identity.nameSize = resumed.player?.nameSize ?? identity.nameSize ?? 1;
-    identity.nameBackground = resumed.player?.nameBackground || identity.nameBackground || "solid";
-    identity.nameBackgroundColor = resumed.player?.nameBackgroundColor || identity.nameBackgroundColor || "#090305";
-    identity.microphoneDeviceId = String(identity.microphoneDeviceId || "");
-    identity.cameraFps = identity.cameraFps === 60 ? 60 : 30;
-    identity.crop = normalizeCrop(identity.crop);
+    identity = restoredIdentity(resumed.player, identity);
     localStorage.setItem(storageKey, JSON.stringify(identity));
     await startMic(id, joinToken, identity, storageKey);
   } catch {
@@ -1305,6 +1350,7 @@ async function startMic(id, joinToken, identity, storageKey) {
     nameSize: identity.nameSize ?? 1,
     nameBackground: identity.nameBackground || "solid",
     nameBackgroundColor: identity.nameBackgroundColor || "#090305",
+    nameVisible: identity.nameVisible !== false,
     speaking: false,
     localWebcamPreview: useWebcam,
   };
@@ -1317,6 +1363,7 @@ async function startMic(id, joinToken, identity, storageKey) {
     <section id="guest-name-controls" class="crop-controls guest-name-controls">
       <div class="crop-heading"><strong>Adjust your name</strong><span id="guest-name-save-state" class="hint">Changes save to the overlay</span></div>
       <div class="field"><label for="guest-name-font">Font</label><select id="guest-name-font" class="input font-${normalizeNameFont(identity.nameFont)}">${nameFontOptions(normalizeNameFont(identity.nameFont))}</select></div>
+      <div class="field"><label for="guest-name-visibility">Name display</label><select id="guest-name-visibility" class="input"><option value="visible" ${identity.nameVisible !== false ? "selected" : ""}>Visible</option><option value="hidden" ${identity.nameVisible === false ? "selected" : ""}>Hidden</option></select></div>
       <label for="guest-name-size"><span>Name size</span><output id="guest-name-size-value">${Math.round((identity.nameSize ?? 1) * 100)}%</output></label><input id="guest-name-size" type="range" min="0.5" max="3" step="0.05" value="${clamp(identity.nameSize ?? 1, 0.5, 3)}" />
       <label for="guest-name-x"><span>Horizontal position</span><output id="guest-name-x-value">${Math.round(identity.nameOffsetX ?? 0)}</output></label><input id="guest-name-x" type="range" min="-100" max="100" step="1" value="${clamp(identity.nameOffsetX ?? 0, -100, 100)}" />
       <label for="guest-name-y"><span>Vertical position</span><output id="guest-name-y-value">${Math.round(identity.nameOffsetY ?? 8)}</output></label><input id="guest-name-y" type="range" min="-100" max="100" step="1" value="${clamp(identity.nameOffsetY ?? 8, -100, 100)}" />
@@ -1324,13 +1371,14 @@ async function startMic(id, joinToken, identity, storageKey) {
     ${useWebcam ? `<video id="camera-preview" autoplay muted playsinline hidden></video><div class="field"><label for="live-camera-fps">Frame rate</label><select id="live-camera-fps" class="input"><option value="30" ${identity.cameraFps === 60 ? "" : "selected"}>30 FPS</option><option value="60" ${identity.cameraFps === 60 ? "selected" : ""}>60 FPS</option></select></div>${cropControlsMarkup()}` : ""}
     <div class="meter"><span id="meter-bar"></span></div>
     <div class="mic-state"><span class="dot live"></span><strong id="mic-label">Listening for your voice</strong></div>
-    <button id="leave-room" class="btn ghost">Forget this room</button>
+    <button id="leave-room" class="btn ghost">Leave overlay</button>
   </section></main>`;
 
   let leaving = false;
   let presenceSocket;
   const previewAvatar = document.querySelector("#guest-live-preview .avatar");
   const guestNameFont = document.querySelector("#guest-name-font");
+  const guestNameVisibility = document.querySelector("#guest-name-visibility");
   const guestNameSize = document.querySelector("#guest-name-size");
   const guestNameX = document.querySelector("#guest-name-x");
   const guestNameY = document.querySelector("#guest-name-y");
@@ -1340,11 +1388,13 @@ async function startMic(id, joinToken, identity, storageKey) {
     identity.nameSize = clamp(guestNameSize.value, 0.5, 3);
     identity.nameOffsetX = clamp(guestNameX.value, -100, 100);
     identity.nameOffsetY = clamp(guestNameY.value, -100, 100);
+    identity.nameVisible = guestNameVisibility.value !== "hidden";
     previewAvatar.classList.remove(...nameFontValues.map((font) => `font-${font}`));
     previewAvatar.classList.add(`font-${identity.nameFont}`);
     previewAvatar.style.setProperty("--name-size", identity.nameSize);
     previewAvatar.style.setProperty("--name-x", `${identity.nameOffsetX}cqw`);
     previewAvatar.style.setProperty("--name-y", `${identity.nameOffsetY}cqh`);
+    previewAvatar.classList.toggle("name-hidden", !identity.nameVisible);
     guestNameFont.className = `input font-${identity.nameFont}`;
     document.querySelector("#guest-name-size-value").textContent = `${Math.round(identity.nameSize * 100)}%`;
     document.querySelector("#guest-name-x-value").textContent = `${Math.round(identity.nameOffsetX)}`;
@@ -1355,7 +1405,7 @@ async function startMic(id, joinToken, identity, storageKey) {
     syncGuestNameControls();
     guestNameSaveState.textContent = "Saving...";
     try {
-      await api(`/api/join/${id}/${joinToken}/${identity.playerId}/name-style`, { method: "PUT", body: JSON.stringify({ nameFont: identity.nameFont, nameSize: identity.nameSize, nameOffsetX: identity.nameOffsetX, nameOffsetY: identity.nameOffsetY }) });
+      await api(`/api/join/${id}/${joinToken}/${identity.playerId}/name-style`, { method: "PUT", body: JSON.stringify({ nameFont: identity.nameFont, nameSize: identity.nameSize, nameOffsetX: identity.nameOffsetX, nameOffsetY: identity.nameOffsetY, nameVisible: identity.nameVisible }) });
       guestNameSaveState.textContent = "Saved to the overlay";
     } catch (error) {
       guestNameSaveState.textContent = "Could not save";
@@ -1367,13 +1417,20 @@ async function startMic(id, joinToken, identity, storageKey) {
     input.onchange = saveGuestNameControls;
   });
   guestNameFont.onchange = saveGuestNameControls;
+  guestNameVisibility.onchange = saveGuestNameControls;
   document.querySelector("#leave-room").onclick = async () => {
     leaving = true;
     presenceSocket?.close();
+    stream?.getTracks().forEach((track) => track.stop());
     document.querySelector("#leave-room").disabled = true;
-    await api(`/api/join/${id}/${joinToken}/${identity.playerId}/leave`, { method: "POST" }).catch(() => {});
-    localStorage.removeItem(storageKey);
-    location.reload();
+    await api(`/api/join/${id}/${joinToken}/${identity.playerId}/leave`, { method: "POST", body: JSON.stringify({ forget: false }) }).catch(() => {});
+    app.innerHTML = `<main class="join-page"><section class="join-card active-mic">${brandMarkup()}<div class="eyebrow">Disconnected</div><h1>Your setup is saved</h1><p class="join-copy">Your images, name settings, and the host's arrangement will be restored when you rejoin.</p><div class="actions"><button id="rejoin-room" class="btn primary" type="button">Rejoin overlay</button><button id="forget-room" class="btn ghost" type="button">Forget saved setup</button></div></section></main>`;
+    document.querySelector("#rejoin-room").onclick = () => location.reload();
+    document.querySelector("#forget-room").onclick = async () => {
+      await api(`/api/join/${id}/${joinToken}/${identity.playerId}/leave`, { method: "POST", body: JSON.stringify({ forget: true }) }).catch(() => {});
+      localStorage.removeItem(storageKey);
+      location.reload();
+    };
   };
 
   let speaking = false;
@@ -1497,6 +1554,7 @@ async function startMic(id, joinToken, identity, storageKey) {
     const changed = speaking !== nextSpeaking;
     speaking = nextSpeaking;
     document.querySelector("#guest-live-preview .avatar")?.classList.toggle("speaking", speaking);
+    if (changed && speaking) restartTalkingGif(document.querySelector("#guest-live-preview .avatar"), identity.talkingImage || identity.idleImage || "");
     document.querySelector("#meter-bar").style.transform = `scaleX(${Math.min(1, level * 12)})`;
     document.querySelector("#mic-label").textContent = speaking ? "Speaking" : "Listening for your voice";
     if (changed) sendSpeakingState();

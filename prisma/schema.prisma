@@ -59,6 +59,7 @@ model Player {
   nameOffsetY       Float     @default(0)
   nameBackground    String    @default("solid")
   nameBackgroundColor String  @default("#090305")
+  nameVisible       Boolean   @default(true)
   positionX         Float?
   positionY         Float?
   displaySize       Float     @default(1)

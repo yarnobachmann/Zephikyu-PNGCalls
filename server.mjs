@@ -238,6 +238,7 @@ function publicRoom(room) {
       nameFont: nameFont(player.nameFont),
       nameSize: boundedNumber(player.nameSize, 0.5, 3, 1), nameOffsetX: boundedNumber(player.nameOffsetX, -100, 100, 0), nameOffsetY: boundedNumber(player.nameOffsetY, -100, 100, 0),
       nameBackground: nameBackground(player.nameBackground), nameBackgroundColor: color(player.nameBackgroundColor, "#090305"),
+      nameVisible: player.nameVisible !== false,
       positionX: player.positionX, positionY: player.positionY,
       displaySize: boundedNumber(player.displaySize, 0.4, 2.5, 1), displayLayer: Math.round(boundedNumber(player.displayLayer, 0, 1000, 0)),
       idleTransparent: player.idleTransparent !== false,
@@ -604,7 +605,7 @@ app.post("/api/sessions/:sessionId/reset-join", requireHost, requireCsrf, async 
 app.put("/api/sessions/:sessionId/placements", requireHost, requireCsrf, async (req, res) => {
   const room = await getRoom(req, res); if (!room) return;
   if (req.body?.reset === true) {
-    await prisma.player.updateMany({ where: { roomId: room.id }, data: { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0 } });
+    await prisma.player.updateMany({ where: { roomId: room.id }, data: { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0, nameVisible: true } });
   } else {
     const placements = Array.isArray(req.body?.players) ? req.body.players.slice(0, 32) : [];
     const roomPlayerIds = new Set(room.players.map((player) => player.id));
@@ -615,6 +616,7 @@ app.put("/api/sessions/:sessionId/placements", requireHost, requireCsrf, async (
         positionX: boundedNumber(entry.x, 0, 100, 50), positionY: boundedNumber(entry.y, 0, 100, 50),
         displaySize: boundedNumber(entry.size, 0.4, 2.5, 1), displayLayer: Math.round(boundedNumber(entry.layer, 0, 1000, 0)),
         nameSize: boundedNumber(entry.nameSize, 0.5, 3, 1), nameOffsetX: boundedNumber(entry.nameX, -100, 100, 0), nameOffsetY: boundedNumber(entry.nameY, -100, 100, 0),
+        nameVisible: entry.nameVisible !== false,
         idleTransparent: entry.idleTransparent !== false,
       },
     })));
@@ -634,13 +636,14 @@ app.put("/api/sessions/:sessionId/players/:playerId", requireHost, requireCsrf, 
     id, roomId: room.id, name: cleanText(req.body?.name, id, 60), accent: color(req.body?.accent, "#d0193c"),
     pinned: req.body?.pinned === undefined ? true : Boolean(req.body.pinned), mediaMode: "png", speakingAnimation: speakingAnimation(req.body?.speakingAnimation), nameFont: nameFont(req.body?.nameFont),
     nameSize: boundedNumber(req.body?.nameSize, 0.5, 3, 1), nameOffsetX: boundedNumber(req.body?.nameOffsetX, -100, 100, 0), nameOffsetY: boundedNumber(req.body?.nameOffsetY, -100, 100, 0),
-    nameBackground: nameBackground(req.body?.nameBackground), nameBackgroundColor: color(req.body?.nameBackgroundColor, "#090305"), presence: { create: { source: "manual" } },
+    nameBackground: nameBackground(req.body?.nameBackground), nameBackgroundColor: color(req.body?.nameBackgroundColor, "#090305"), nameVisible: req.body?.nameVisible !== false, presence: { create: { source: "manual" } },
   }, update: {
     name: cleanText(req.body?.name, current?.name || id, 60), accent: color(req.body?.accent, current?.accent || "#d0193c"),
     pinned: req.body?.pinned === undefined ? current?.pinned ?? true : Boolean(req.body.pinned), speakingAnimation: req.body?.speakingAnimation === undefined ? speakingAnimation(current?.speakingAnimation) : speakingAnimation(req.body.speakingAnimation), nameFont: req.body?.nameFont === undefined ? nameFont(current?.nameFont) : nameFont(req.body.nameFont),
     nameSize: req.body?.nameSize === undefined ? current?.nameSize ?? 1 : boundedNumber(req.body.nameSize, 0.5, 3, 1),
     nameBackground: req.body?.nameBackground === undefined ? nameBackground(current?.nameBackground) : nameBackground(req.body.nameBackground),
     nameBackgroundColor: req.body?.nameBackgroundColor === undefined ? color(current?.nameBackgroundColor, "#090305") : color(req.body.nameBackgroundColor, current?.nameBackgroundColor || "#090305"),
+    nameVisible: req.body?.nameVisible === undefined ? current?.nameVisible ?? true : Boolean(req.body.nameVisible),
     nameOffsetX: req.body?.nameOffsetX === undefined ? current?.nameOffsetX ?? 0 : boundedNumber(req.body.nameOffsetX, -100, 100, 0),
     nameOffsetY: req.body?.nameOffsetY === undefined ? current?.nameOffsetY ?? 0 : boundedNumber(req.body.nameOffsetY, -100, 100, 0),
     useDiscordAvatar: req.body?.useDiscordAvatar === undefined ? current?.useDiscordAvatar ?? true : Boolean(req.body.useDiscordAvatar),
@@ -700,17 +703,18 @@ app.post("/api/join/:sessionId/:joinToken", joinLimit, async (req, res) => {
   const room = await getRoom(req, res); if (!room) return;
   if (!validRoomToken(req.params.joinToken, room.joinToken)) return res.status(401).json({ error: "Invalid room link" });
   const requestedId = cleanId(req.body?.playerId || "", "");
-  const existingPlayer = room.players.find((player) => player.id === requestedId);
   const cookieCredential = parseCookies(req)[guestCookieName(room.id)] || "";
   const [cookiePlayerId, cookieKey] = cookieCredential.split(".", 2);
+  const existingPlayer = room.players.find((player) => player.id === (requestedId || cookiePlayerId));
   if (existingPlayer?.joinKey && cookiePlayerId === existingPlayer.id && safeEqual(cookieKey, existingPlayer.joinKey)) {
     setCookie(res, guestCookieName(room.id), `${existingPlayer.id}.${existingPlayer.joinKey}`, guestCookieMaxAge, cookieSecure(req), true);
     return res.json({ playerId: existingPlayer.id, sessionName: room.name, player: existingPlayer });
   }
+  if (req.body?.resumeOnly === true) return res.status(401).json({ error: "No saved player setup found" });
   const player = await prisma.player.create({ data: {
     id: token(8), roomId: room.id, name: cleanText(req.body?.name, "Player", 60), accent: /^#[0-9a-f]{6}$/i.test(req.body?.accent) ? req.body.accent : "#d0193c",
     pinned: false, joinKey: token(24), mediaMode: req.body?.mediaMode === "webcam" ? "webcam" : "png", speakingAnimation: speakingAnimation(req.body?.speakingAnimation), nameFont: nameFont(req.body?.nameFont),
-    nameOffsetX: boundedNumber(req.body?.nameOffsetX, -100, 100, 0), nameOffsetY: boundedNumber(req.body?.nameOffsetY, -100, 100, 8), presence: { create: { source: "browser" } },
+    nameOffsetX: boundedNumber(req.body?.nameOffsetX, -100, 100, 0), nameOffsetY: boundedNumber(req.body?.nameOffsetY, -100, 100, 8), nameVisible: req.body?.nameVisible !== false, presence: { create: { source: "browser" } },
   } });
   await prisma.room.update({ where: { id: room.id }, data: { updatedAt: new Date() } }); await audit(req, "guest.join", "success", room.id, "guest"); await broadcast(room.id);
   setCookie(res, guestCookieName(room.id), `${player.id}.${player.joinKey}`, guestCookieMaxAge, cookieSecure(req), true);
@@ -728,6 +732,7 @@ app.put("/api/join/:sessionId/:joinToken/:playerId/name-style", guestGuard, asyn
     nameSize: boundedNumber(req.body?.nameSize, 0.5, 3, req.player.nameSize || 1),
     nameOffsetX: boundedNumber(req.body?.nameOffsetX, -100, 100, req.player.nameOffsetX || 0),
     nameOffsetY: boundedNumber(req.body?.nameOffsetY, -100, 100, req.player.nameOffsetY || 0),
+    nameVisible: req.body?.nameVisible === undefined ? req.player.nameVisible !== false : Boolean(req.body.nameVisible),
   } });
   await prisma.room.update({ where: { id: req.room.id }, data: { updatedAt: new Date() } });
   await broadcast(req.room.id);
@@ -739,7 +744,7 @@ app.post("/api/join/:sessionId/:joinToken/:playerId/heartbeat", heartbeatLimit, 
 });
 app.post("/api/join/:sessionId/:joinToken/:playerId/leave", joinLimit, guestGuard, async (req, res) => {
   await prisma.presence.update({ where: { playerId: req.player.id }, data: { present: false, speaking: false, muted: false, lastSeen: new Date() } });
-  setCookie(res, guestCookieName(req.room.id), "", 0, cookieSecure(req), true);
+  if (req.body?.forget === true) setCookie(res, guestCookieName(req.room.id), "", 0, cookieSecure(req), true);
   await audit(req, "guest.leave", "success", req.room.id, "guest");
   await broadcast(req.room.id);
   res.status(204).end();
