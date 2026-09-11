@@ -150,8 +150,10 @@ In the Discord Developer Portal:
 1. Under Installation, enable both User Install and Guild Install so the Activity can launch in servers, DMs, and Group DMs.
 2. Under Activities, enable Activities and select the supported desktop platform.
 3. Add the URL mapping `/` to `pngcalls.yarnobachmann.nl`.
-4. Add the host Discord account as an application tester while the app is in development.
-5. Request Discord approval for `rpc.voice.read` before distributing the Activity publicly.
+4. Under General Information, upload `public/assets/discord/pngcalls-activity-icon.gif` as the application image. Use the adjacent PNG fallback if the portal does not accept animated artwork.
+5. Under Activities, upload `public/assets/discord/pngcalls-activity-banner.png` as the Activity banner.
+6. Add the host Discord account as an application tester while the app is in development.
+7. Request Discord approval for `rpc.voice.read` before distributing the Activity publicly.
 
 Start or join a Discord call, open the App Launcher in that call, and launch PNGCalls. The Activity automatically authenticates the linked host Discord account and reconnects to the last selected PNGCalls room. Keep the small Activity open during the call. It forwards `SPEAKING_START`, `SPEAKING_STOP`, and voice-state changes to the existing browser overlay over WebSockets. It never transmits call audio.
 

@@ -49,6 +49,8 @@ model Player {
   joinKey           String?
   idleImage         String?
   talkingImage      String?
+  discordAvatar     String?
+  useDiscordAvatar  Boolean   @default(true)
   mediaMode         String    @default("png")
   speakingAnimation String    @default("none")
   nameFont          String    @default("rounded")

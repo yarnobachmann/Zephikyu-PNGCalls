@@ -26,11 +26,12 @@ function displayName(user) {
 function remember(user, extra = {}) {
   const id = String(user?.id || user?.user_id || "");
   if (!id) return;
-  const current = users.get(id) || { id, name: `Discord user ${id.slice(-4)}`, speaking: false, muted: false, bot: false };
+  const current = users.get(id) || { id, name: `Discord user ${id.slice(-4)}`, speaking: false, muted: false, bot: false, avatar: "" };
   users.set(id, {
     ...current,
     name: displayName(user) === "Discord user" ? current.name : displayName(user),
     bot: Boolean(user?.bot ?? current.bot),
+    avatar: typeof user?.avatar === "string" && user.avatar ? user.avatar : current.avatar,
     ...extra,
   });
 }
@@ -105,11 +106,19 @@ function connectRoom() {
   socket = new WebSocket(`${protocol}//${location.host}/ws/activity/${encodeURIComponent(selectedRoom)}/${encodeURIComponent(bridgeToken)}`);
   setStatus("Connecting to PNGCalls", "The Activity will stay quiet in the background.");
   socket.addEventListener("open", () => {
-    setStatus("Call detection is live", "Keep this Activity open while the Discord call is active.");
+    setStatus("Call detection is live", "Checking the current call participants...");
     sendSnapshot();
     heartbeat = setInterval(() => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "heartbeat" }));
     }, 5000);
+  });
+  socket.addEventListener("message", (event) => {
+    try {
+      const message = JSON.parse(String(event.data));
+      if (message.type !== "snapshot_ack") return;
+      const count = Number(message.count || 0);
+      setStatus("Call detection is live", `${count} participant${count === 1 ? "" : "s"} sent to ${message.roomName || "PNGCalls"}. Keep this Activity open.`);
+    } catch {}
   });
   socket.addEventListener("close", () => {
     clearInterval(heartbeat);
@@ -162,4 +171,3 @@ start().catch((error) => {
   console.error(error);
   setStatus("Activity setup is incomplete", error?.message || "Open PNGCalls Settings and check the Discord configuration.");
 });
-

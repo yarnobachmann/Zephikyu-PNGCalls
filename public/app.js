@@ -85,7 +85,8 @@ function bindCropControls(initialCrop = {}, onChange = () => {}) {
 
 function avatarMarkup(player) {
   const isWebcam = player.mediaMode === "webcam";
-  const image = isWebcam ? player.webcamImage : player.speaking ? player.talkingImage || player.idleImage : player.idleImage;
+  const avatarFallback = player.useDiscordAvatar ? player.discordAvatar : null;
+  const image = isWebcam ? player.webcamImage : player.speaking ? player.talkingImage || player.idleImage || avatarFallback : player.idleImage || avatarFallback;
   const animation = ["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none";
   const font = normalizeNameFont(player.nameFont);
   const positioned = player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined;
@@ -199,11 +200,7 @@ function tutorialSteps() {
     [".meter", "The meter shows microphone activity. Your speaking state changes automatically."],
     ["#leave-room", "Use this when you want to leave the overlay and forget this room on this device."],
   ];
-  if (document.querySelector("#auth-form")) return [
-    ["#auth-form input[name='username']", "You are not allowed here you secondhand scoobydoo shoe."],
-    ["#auth-form input[name='password']", "Use a unique password of at least 12 characters."],
-    ["#auth-form button[type='submit']", "Sign in to open the host dashboard. Invited players never need an account."],
-  ];
+  if (document.querySelector("#auth-form")) return [];
   if (document.querySelector("#create-form")) return [
     ["#create-form input[name='name']", "Give the room a name that you will recognize in the host dashboard."],
     ["#create-form button[type='submit']", "Create the room to receive separate player invitation and OBS overlay links."],
@@ -259,6 +256,10 @@ function mountTutorialHelper() {
   const helperCopy = document.querySelector("#auth-form") ? "You are not allowed here you secondhand scoobydoo shoe." : "Need help? Press me.";
   helper.innerHTML = `<button type="button" aria-label="Open PNGCalls tutorial"><span class="tutorial-balloon">${helperCopy}</span><img src="${tutorialImage}" alt="Zeph tutorial helper" /></button>`;
   document.body.append(helper);
+  if (document.querySelector("#auth-form")) {
+    helper.querySelector("button").setAttribute("aria-label", "Zeph guards the host login");
+    return;
+  }
   helper.querySelector("button").onclick = startTutorial;
   if (localStorage.getItem("pngcalls.tutorialSeen")) return;
   const prompt = document.createElement("div");
@@ -381,7 +382,7 @@ function stopDashboardLive() {
 }
 
 function playerSignature(players = []) {
-  return players.map((player) => [player.id, player.mediaMode, player.idleImage || "", player.talkingImage || ""].join(":")).join("|");
+  return players.map((player) => [player.id, player.mediaMode, player.idleImage || "", player.talkingImage || "", player.discordAvatar || "", player.useDiscordAvatar !== false].join(":")).join("|");
 }
 
 function hasCustomPlacement(players = []) {
@@ -405,7 +406,8 @@ function applyPlayerState(avatar, player, includePlacement = true) {
     avatar.style.setProperty("--layer", Math.round(clamp(player.displayLayer || 0, 0, 1000)));
   }
   if (player.mediaMode !== "webcam") {
-    const source = player.speaking ? player.talkingImage || player.idleImage : player.idleImage;
+    const avatarFallback = player.useDiscordAvatar ? player.discordAvatar : null;
+    const source = player.speaking ? player.talkingImage || player.idleImage || avatarFallback : player.idleImage || avatarFallback;
     const image = avatar.querySelector(".avatar-img");
     if (image && source && image.getAttribute("src") !== source) image.src = source;
   }
@@ -692,6 +694,10 @@ function renderDashboard() {
             <div class="companion-panel">
               <div><div class="eyebrow">DISCORD ACTIVITY</div><h3>${session.companion?.mode === "activity" && session.companion.online ? "Call detection is live" : "Launch inside your active call"}</h3><p class="subtle">${session.companion?.mode === "activity" && session.companion.channelName ? `Following ${escapeHtml(session.companion.channelName)} with Discord speaking events.` : "In the Developer Portal, enable Activities, map / to pngcalls.yarnobachmann.nl, and enable both User Install and Guild Install. Then launch PNGCalls from the Discord App Launcher in the DM or voice call."}</p></div>
               <div class="discord-config-actions">${discordConnection?.activityUrl ? `<a class="btn discord-btn" href="${escapeHtml(discordConnection.activityUrl)}" target="_blank" rel="noopener">Open PNGCalls in Discord</a>` : ""}</div>
+              <div class="activity-artwork">
+                <img class="activity-artwork-icon" src="/assets/discord/pngcalls-activity-icon.gif" alt="Animated PNGCalls Activity icon" />
+                <div><strong>Discord artwork</strong><p class="subtle">Use the animated Zeph GIF as the application image and the studio wall as the Activity banner.</p><div class="discord-config-actions"><a class="btn ghost" href="/assets/discord/pngcalls-activity-icon.gif" download>Download image GIF</a><a class="btn ghost" href="/assets/discord/pngcalls-activity-icon.png" download>Download image PNG</a><a class="btn ghost" href="/assets/discord/pngcalls-activity-banner.png" download>Download wall banner</a></div></div>
+              </div>
               <details><summary>Windows EXE fallback</summary><p class="subtle">Use this only while the Activity is awaiting Discord approval or for troubleshooting. Pairing is saved after the first setup.</p><div class="discord-config-actions"><a class="btn ghost" href="${escapeHtml(discordConnection?.companionDownloadUrl || session.companion?.downloadUrl || "#")}" download>Download Windows EXE</a>${discordConnection?.connected && !discordConnection.connected.rpcReady ? `<a class="btn" href="/auth/discord/companion">Authorize EXE fallback</a>` : ""}${discordConnection?.connected?.rpcReady ? `<button id="pair-discord-companion" class="btn" type="button">${session.companion?.paired ? "Replace saved pairing" : "Create one-time pairing"}</button>` : ""}${session.companion?.paired ? `<button id="remove-discord-companion" class="btn ghost danger" type="button">Forget companion</button>` : ""}</div></details>
             </div>
           </section>
@@ -808,6 +814,7 @@ function showPlayerModal(player = null) {
     <div class="field"><label>Stable player ID</label><input name="id" class="input mono" required value="${escapeHtml(player?.id || "")}" ${player ? "readonly" : ""} placeholder="player-name" /></div>
     <div class="field"><label>Display name</label><input name="name" class="input" required value="${escapeHtml(player?.name || "")}" placeholder="Player name" /></div>
     <div class="two-col"><div class="field"><label>Idle image</label><input name="idle" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div><div class="field"><label>Talking image</label><input name="talking" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
+    ${player?.source === "discord" ? `<label class="check-row"><input name="useDiscordAvatar" type="checkbox" ${player.useDiscordAvatar !== false ? "checked" : ""} /><span>Use this person's Discord profile picture when no custom image is set</span></label>` : ""}
     <div class="field"><label>Speaking accent</label><input name="accent" class="input" type="color" value="${escapeHtml(player?.accent || "#d0193c")}" /><span class="hint">Used for the name outline, webcam border, and glow while speaking.</span></div>
     <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" ${player?.speakingAnimation && player.speakingAnimation !== "none" ? "checked" : ""} /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input"><option value="bounce" ${player?.speakingAnimation === "bounce" ? "selected" : ""}>Bounce</option><option value="pulse" ${player?.speakingAnimation === "pulse" ? "selected" : ""}>Pulse</option><option value="shake" ${player?.speakingAnimation === "shake" ? "selected" : ""}>Shake</option><option value="glow" ${player?.speakingAnimation === "glow" ? "selected" : ""}>Glow</option></select></div></div>
     <div class="actions"><button class="btn primary" type="submit">Save player</button><button class="btn ghost" type="button" id="cancel-modal">Cancel</button>${player ? `<button class="btn ghost danger" type="button" id="delete-player">Remove</button>` : ""}</div>
@@ -824,7 +831,7 @@ function showPlayerModal(player = null) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const id = form.get("id");
-    await api(`/api/sessions/${session.id}/players/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ name: form.get("name"), accent: form.get("accent"), pinned: true, speakingAnimation: form.get("animateSpeaking") ? form.get("speakingAnimation") : "none" }) });
+    await api(`/api/sessions/${session.id}/players/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ name: form.get("name"), accent: form.get("accent"), pinned: true, speakingAnimation: form.get("animateSpeaking") ? form.get("speakingAnimation") : "none", ...(player?.source === "discord" ? { useDiscordAvatar: Boolean(form.get("useDiscordAvatar")) } : {}) }) });
     if (form.get("idle")?.size || form.get("talking")?.size) {
       const images = new FormData();
       if (form.get("idle")?.size) images.append("idle", form.get("idle"));
@@ -1194,7 +1201,7 @@ async function runOverlay() {
   let playerStructure = "";
   const render = (data) => {
     document.documentElement.style.background = "transparent";
-    const nextStructure = data.players.map((player) => [player.id, player.mediaMode, player.idleImage || "", player.talkingImage || ""].join(":")).join("|");
+    const nextStructure = playerSignature(data.players);
     let stage = app.querySelector(".overlay-stage");
     if (!stage || nextStructure !== playerStructure) {
       app.querySelectorAll("img[data-webcam-src]").forEach((image) => { image.webcamSocket?.close(); if (image.dataset.webcamBlob) URL.revokeObjectURL(image.dataset.webcamBlob); });

@@ -44,6 +44,11 @@ const token = (bytes = 18) => crypto.randomBytes(bytes).toString("base64url");
 const hash = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
 const cleanId = (value, fallback = "player") => String(value || fallback).replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 80);
 const cleanText = (value, fallback, max) => String(value || fallback).trim().slice(0, max);
+const discordAvatarUrl = (discordId, avatarHash) => {
+  const id = String(discordId || "").replace(/\D/g, "").slice(0, 24);
+  const avatar = String(avatarHash || "").match(/^a?_[a-z0-9]+$/i)?.[0] || String(avatarHash || "").match(/^[a-z0-9]+$/i)?.[0];
+  return id && avatar ? `https://cdn.discordapp.com/avatars/${id}/${avatar}.webp?size=512` : null;
+};
 const bearer = (req) => String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
 const guestCookieName = (roomId) => `zephikyu_guest_${cleanId(roomId)}`;
 const safeEqual = (left, right) => {
@@ -215,8 +220,9 @@ function publicRoom(room) {
       downloadUrl: companionDownloadUrl,
       mode: discordActivities.has(room.id) ? "activity" : discordCompanions.has(room.id) ? "companion" : null,
     },
-    players: room.players.filter((player) => activeIds.has(player.id) || (player.pinned && player.presence?.source !== "browser")).map((player) => ({
-      id: player.id, name: player.name, idleImage: player.idleImage, talkingImage: player.talkingImage || player.idleImage, accent: player.accent,
+    players: room.players.filter((player) => activeIds.has(player.id) || (player.pinned && player.presence?.source === "manual")).map((player) => ({
+      id: player.id, name: player.name, idleImage: player.idleImage, talkingImage: player.talkingImage, discordAvatar: player.discordAvatar,
+      useDiscordAvatar: player.useDiscordAvatar,
       mediaMode: player.mediaMode || "png",
       speakingAnimation: speakingAnimation(player.speakingAnimation),
       nameFont: nameFont(player.nameFont),
@@ -321,7 +327,7 @@ app.get("/", (req, res, next) => {
   res.sendFile(path.resolve("public/activity.html"));
 });
 app.use(helmet({ contentSecurityPolicy: { directives: {
-  defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:"],
+  defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://cdn.discordapp.com"],
   connectSrc: ["'self'"], objectSrc: ["'none'"], baseUri: ["'none'"], frameAncestors: ["'none'"], upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null,
 } }, crossOriginResourcePolicy: { policy: "same-origin" } }));
 app.use(express.json({ limit: "256kb", type: "application/json" }));
@@ -610,6 +616,7 @@ app.put("/api/sessions/:sessionId/players/:playerId", requireHost, requireCsrf, 
   }, update: {
     name: cleanText(req.body?.name, current?.name || id, 60), accent: /^#[0-9a-f]{6}$/i.test(req.body?.accent) ? req.body.accent : current?.accent || "#d0193c",
     pinned: req.body?.pinned === undefined ? current?.pinned ?? true : Boolean(req.body.pinned), speakingAnimation: req.body?.speakingAnimation === undefined ? speakingAnimation(current?.speakingAnimation) : speakingAnimation(req.body.speakingAnimation), nameFont: req.body?.nameFont === undefined ? nameFont(current?.nameFont) : nameFont(req.body.nameFont),
+    useDiscordAvatar: req.body?.useDiscordAvatar === undefined ? current?.useDiscordAvatar ?? true : Boolean(req.body.useDiscordAvatar),
   } });
   await prisma.room.update({ where: { id: room.id }, data: { updatedAt: new Date() } }); await broadcast(room.id); res.json(player);
 });
@@ -794,7 +801,7 @@ async function syncDiscordSnapshot(roomId, payload) {
   const users = rawUsers.map((entry) => ({
     discordId: String(entry?.id || "").replace(/\D/g, "").slice(0, 24),
     name: cleanText(entry?.name || entry?.username, "Discord user", 60),
-    speaking: Boolean(entry?.speaking), muted: Boolean(entry?.muted), bot: Boolean(entry?.bot),
+    speaking: Boolean(entry?.speaking), muted: Boolean(entry?.muted), bot: Boolean(entry?.bot), avatar: String(entry?.avatar || "").slice(0, 100),
   })).filter((entry) => entry.discordId && !entry.bot);
   const activeIds = new Set(users.map((entry) => `dc-${roomId}-${entry.discordId}`));
   const existing = await prisma.player.findMany({ where: { roomId, presence: { source: "discord" } }, select: { id: true } });
@@ -802,9 +809,9 @@ async function syncDiscordSnapshot(roomId, payload) {
   for (const user of users) {
     const id = `dc-${roomId}-${user.discordId}`;
     operations.push(prisma.player.upsert({ where: { id }, create: {
-      id, roomId, name: user.name, pinned: false, mediaMode: "png",
+      id, roomId, name: user.name, pinned: false, mediaMode: "png", discordAvatar: discordAvatarUrl(user.discordId, user.avatar), useDiscordAvatar: true,
       presence: { create: { present: true, speaking: user.speaking, muted: user.muted, source: "discord", lastSeen: new Date() } },
-    }, update: { name: user.name, presence: { upsert: { create: { present: true, speaking: user.speaking, muted: user.muted, source: "discord", lastSeen: new Date() }, update: { present: true, speaking: user.speaking, muted: user.muted, source: "discord", lastSeen: new Date() } } } } }));
+    }, update: { name: user.name, ...(user.avatar ? { discordAvatar: discordAvatarUrl(user.discordId, user.avatar) } : {}), presence: { upsert: { create: { present: true, speaking: user.speaking, muted: user.muted, source: "discord", lastSeen: new Date() }, update: { present: true, speaking: user.speaking, muted: user.muted, source: "discord", lastSeen: new Date() } } } } }));
   }
   for (const player of existing) if (!activeIds.has(player.id)) operations.push(prisma.presence.updateMany({ where: { playerId: player.id }, data: { present: false, speaking: false, lastSeen: new Date() } }));
   operations.push(prisma.room.update({ where: { id: roomId }, data: {
@@ -845,7 +852,9 @@ discordCompanionSockets.on("connection", (socket) => {
         await broadcast(roomId);
         return;
       }
-      if (payload?.type === "snapshot") await syncDiscordSnapshot(roomId, payload);
+      if (payload?.type === "snapshot") {
+        await syncDiscordSnapshot(roomId, payload);
+      }
       if (payload?.type === "heartbeat") await prisma.room.update({ where: { id: roomId }, data: { companionLastSeen: new Date() } });
     } catch (error) {
       console.error("Discord companion message failed", error);
@@ -873,7 +882,14 @@ discordActivitySockets.on("connection", (socket, context) => {
     try {
       if (isBinary) return socket.close(4003, "Text messages required");
       const payload = JSON.parse(String(message));
-      if (payload?.type === "snapshot") await syncDiscordSnapshot(roomId, payload);
+      if (payload?.type === "snapshot") {
+        await syncDiscordSnapshot(roomId, payload);
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({
+          type: "snapshot_ack",
+          count: Array.isArray(payload.users) ? payload.users.length : 0,
+          roomName: context.roomName
+        }));
+      }
       if (payload?.type === "heartbeat") await prisma.room.update({ where: { id: roomId }, data: { companionLastSeen: new Date() } });
     } catch (error) {
       console.error("Discord Activity message failed", error);
@@ -901,7 +917,7 @@ server.on("upgrade", async (request, socket, head) => {
       const room = roomId ? await prisma.room.findUnique({ where: { id: roomId } }) : null;
       const linked = await prisma.discordConnection.findUnique({ where: { id: 1 }, select: { discordUserId: true } });
       if (!room || !activitySession || activitySession.expiresAt <= Date.now() || !linked || !safeEqual(activitySession.userId, linked.discordUserId)) return socket.destroy();
-      return discordActivitySockets.handleUpgrade(request, socket, head, (client) => discordActivitySockets.emit("connection", client, { roomId }));
+      return discordActivitySockets.handleUpgrade(request, socket, head, (client) => discordActivitySockets.emit("connection", client, { roomId, roomName: room.name }));
     }
     if (parts.length !== 5 || parts[0] !== "ws" || !["publish", "view"].includes(parts[1])) return socket.destroy();
     const [, role, roomId, roomToken, playerId] = parts;

@@ -150,10 +150,17 @@ try {
   assert.equal(activityCredentials.access_token, "test-activity-access-token");
   assert.equal(activityCredentials.rooms.some((entry) => entry.id === room.sessionId), true);
   activity = await openSocket(`${socketUrl}/ws/activity/${room.sessionId}/${activityCredentials.bridge_token}`);
-  activity.send(JSON.stringify({ type: "snapshot", channel: { id: "777788889999000011", name: "Activity direct call" }, users: [{ id: "222233334444555566", name: "Discord friend", speaking: false, muted: false }] }));
+  const activityAck = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Activity snapshot was not acknowledged")), 5_000);
+    activity.once("message", (message) => { clearTimeout(timeout); resolve(JSON.parse(String(message))); });
+  });
+  activity.send(JSON.stringify({ type: "snapshot", channel: { id: "777788889999000011", name: "Activity direct call" }, users: [{ id: "222233334444555566", name: "Discord friend", avatar: "abc123", speaking: false, muted: false }] }));
+  assert.deepEqual(await activityAck, { type: "snapshot_ack", count: 1, roomName: "WebSocket test" });
   await new Promise((resolve) => setTimeout(resolve, 250));
   const activityOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
   assert.equal(activityOverlay.players.find((player) => player.source === "discord").speaking, false);
+  assert.equal(activityOverlay.players.find((player) => player.source === "discord").discordAvatar, "https://cdn.discordapp.com/avatars/222233334444555566/abc123.webp?size=512");
+  assert.equal(activityOverlay.players.find((player) => player.source === "discord").useDiscordAvatar, true);
   assert.equal(activityOverlay.companion.channelName, "Activity direct call");
   assert.equal(activityOverlay.companion.mode, "activity");
 
