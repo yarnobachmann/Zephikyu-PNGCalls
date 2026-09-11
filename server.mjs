@@ -239,6 +239,7 @@ function publicRoom(room) {
       nameBackground: nameBackground(player.nameBackground), nameBackgroundColor: color(player.nameBackgroundColor, "#090305"),
       positionX: player.positionX, positionY: player.positionY,
       displaySize: boundedNumber(player.displaySize, 0.4, 2.5, 1), displayLayer: Math.round(boundedNumber(player.displayLayer, 0, 1000, 0)),
+      idleTransparent: player.idleTransparent !== false,
       webcamImage: player.mediaMode === "webcam" ? `/api/webcam/${room.id}/${room.overlayToken}/${player.id}` : null,
       speaking: Boolean(player.presence?.speaking), muted: Boolean(player.presence?.muted), source: player.presence?.source || "manual",
     })),
@@ -592,6 +593,9 @@ app.post("/api/sessions/:sessionId/reset-join", requireHost, requireCsrf, async 
     const key = webcamKey(room.id, player.id);
     webcamPublishers.get(key)?.close(1000, "Player link reset");
     for (const viewer of webcamViewers.get(key) || []) viewer.close(1000, "Player link reset");
+    for (const guestSocket of guestPresenceSockets.clients) {
+      if (guestSocket.roomId === room.id && guestSocket.playerId === player.id) guestSocket.close(4001, "Player link reset");
+    }
   }
   await audit(req, "room.reset_join", "success", room.id);
   await broadcast(room.id);
@@ -612,6 +616,7 @@ app.put("/api/sessions/:sessionId/placements", requireHost, requireCsrf, async (
         positionX: boundedNumber(entry.x, 0, 100, 50), positionY: boundedNumber(entry.y, 0, 100, 50),
         displaySize: boundedNumber(entry.size, 0.4, 2.5, 1), displayLayer: Math.round(boundedNumber(entry.layer, 0, 1000, 0)),
         nameSize: boundedNumber(entry.nameSize, 0.5, 3, 1), nameOffsetX: boundedNumber(entry.nameX, -100, 100, 0), nameOffsetY: boundedNumber(entry.nameY, -100, 100, 0),
+        idleTransparent: entry.idleTransparent !== false,
       },
     })));
   }
@@ -794,10 +799,11 @@ await importLegacyState();
 const server = app.listen(port, host, () => console.log(`Zephikyu PNGCalls is ready at http://${host}:${port}`));
 const webcamSockets = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 });
 const overlayStateSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+const guestPresenceSockets = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
 const discordCompanionSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const discordActivitySockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const socketKeepAlive = setInterval(() => {
-  for (const socketServer of [overlayStateSockets, discordCompanionSockets, discordActivitySockets]) {
+  for (const socketServer of [overlayStateSockets, guestPresenceSockets, discordCompanionSockets, discordActivitySockets]) {
     for (const socket of socketServer.clients) if (socket.readyState === WebSocket.OPEN) socket.ping();
   }
 }, 20_000);
@@ -814,6 +820,34 @@ overlayStateSockets.on("connection", async (socket, context) => {
   socket.on("close", () => {
     group.delete(socket);
     if (!group.size) overlayClients.delete(context.roomId);
+  });
+});
+
+guestPresenceSockets.on("connection", (socket, context) => {
+  socket.roomId = context.roomId;
+  socket.playerId = context.playerId;
+  let speaking = false;
+  let updateQueue = Promise.resolve();
+  const updatePresence = (nextSpeaking = speaking, announce = false) => {
+    speaking = Boolean(nextSpeaking);
+    const state = speaking;
+    updateQueue = updateQueue.then(async () => {
+      await prisma.presence.updateMany({ where: { playerId: context.playerId }, data: { present: true, speaking: state, muted: false, source: "browser", lastSeen: new Date() } });
+      if (announce) await broadcast(context.roomId);
+    }).catch(() => {});
+  };
+  updatePresence(false, true);
+  const presencePulse = setInterval(() => updatePresence(speaking), 3000);
+  socket.on("message", (message, isBinary) => {
+    if (isBinary || message.length > 16 * 1024) return socket.close(4003, "Text state required");
+    try {
+      const payload = JSON.parse(String(message));
+      if (payload?.type === "state") updatePresence(Boolean(payload.speaking), true);
+    } catch {}
+  });
+  socket.on("close", () => {
+    clearInterval(presencePulse);
+    prisma.presence.updateMany({ where: { playerId: context.playerId }, data: { speaking: false, lastSeen: new Date() } }).then(() => broadcast(context.roomId)).catch(() => {});
   });
 });
 
@@ -971,6 +1005,15 @@ server.on("upgrade", async (request, socket, head) => {
       const room = await prisma.room.findUnique({ where: { id: cleanId(parts[2]) } });
       if (!room || !validRoomToken(parts[3], room.overlayToken)) return socket.destroy();
       return overlayStateSockets.handleUpgrade(request, socket, head, (client) => overlayStateSockets.emit("connection", client, { roomId: room.id }));
+    }
+    if (parts.length === 5 && parts[0] === "ws" && parts[1] === "join") {
+      const [, , roomId, joinToken, playerId] = parts;
+      const room = await prisma.room.findUnique({ where: { id: cleanId(roomId, "") }, include: { players: true } });
+      const player = room?.players.find((entry) => entry.id === cleanId(playerId, ""));
+      const credential = room ? parseCookies(request)[guestCookieName(room.id)] || "" : "";
+      const [cookiePlayerId, cookieKey] = credential.split(".", 2);
+      if (!room || !player || !validRoomToken(joinToken, room.joinToken) || cookiePlayerId !== player.id || !player.joinKey || !safeEqual(cookieKey, player.joinKey)) return socket.destroy();
+      return guestPresenceSockets.handleUpgrade(request, socket, head, (client) => guestPresenceSockets.emit("connection", client, { roomId: room.id, playerId: player.id }));
     }
     if (parts.length !== 5 || parts[0] !== "ws" || !["publish", "view"].includes(parts[1])) return socket.destroy();
     const [, role, roomId, roomToken, playerId] = parts;

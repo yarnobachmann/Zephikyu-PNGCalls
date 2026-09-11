@@ -115,7 +115,7 @@ function avatarMarkup(player) {
   const nameY = clamp(player.nameOffsetY || 0, -100, 100);
   const layer = Math.round(clamp(player.displayLayer || 0, 0, 1000));
   const nameBackgroundClass = player.nameBackground === "none" ? " no-background" : "";
-  return `<article class="avatar font-${font} ${positioned ? "custom-position" : ""} ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)};--x:${x}%;--y:${y}%;--size:${size};--layer:${layer};--name-size:${nameSize};--name-x:${nameX}cqw;--name-y:${nameY}cqh;--name-bg:${escapeHtml(player.nameBackgroundColor || "#090305")}">
+  return `<article class="avatar font-${font} ${positioned ? "custom-position" : ""} ${isWebcam ? "webcam" : ""} ${player.idleTransparent === false ? "idle-opaque" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)};--x:${x}%;--y:${y}%;--size:${size};--layer:${layer};--name-size:${nameSize};--name-x:${nameX}cqw;--name-y:${nameY}cqh;--name-bg:${escapeHtml(player.nameBackgroundColor || "#090305")}">
     <div class="avatar-visual">${isWebcam && player.localWebcamPreview ? `<canvas id="camera-output-preview" class="avatar-img webcam-img" width="640" height="360" aria-label="${escapeHtml(player.name)} camera preview"></canvas>` : isWebcam && player.webcamImage ? `<img class="avatar-img webcam-img" src="${escapeHtml(player.webcamImage)}?v=${Date.now()}" data-webcam-src="${escapeHtml(player.webcamImage)}" alt="${escapeHtml(player.name)} webcam" />` : idleImage ? `<img class="avatar-img avatar-img-idle" src="${escapeHtml(idleImage)}" alt="" /><img class="avatar-img avatar-img-talking" src="${escapeHtml(talkingImage)}" alt="${escapeHtml(player.name)}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}</div>
     <div class="avatar-name${nameBackgroundClass}" title="Drag to move the name">${escapeHtml(player.name)}</div>
     <button class="avatar-resize" type="button" aria-label="Resize ${escapeHtml(player.name)}" title="Drag to resize">↘</button>
@@ -208,7 +208,7 @@ function toast(message) {
 }
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
-const tutorialRevision = "4";
+const tutorialRevision = "5";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
     ["input[name='name']", "Enter your display name. PNGCalls remembers it and the other setup choices on this device."],
@@ -238,9 +238,9 @@ function tutorialSteps() {
     ["#copy-join", "Copy this invitation link and send it to every player who should appear."],
     ["[data-reset-player-link]", "Reset the invitation between streams without changing your private OBS browser-source link."],
     ["#copy-overlay", "Copy this private link into an OBS Browser Source. Speaking changes use the same direct live connection as this preview."],
-    ["#edit-placement", "Open Arrange players to drag and resize avatars and names. It includes name-position presets, independent name size, and alignment snapping with guide lines."],
+    ["#edit-placement", "Open Arrange players to drag and resize avatars and names. Select a PNGTuber to choose whether it fades while idle, and use the name and snapping controls for precise placement."],
     ["[data-view='players']", "The player room shows everyone who joined. Edit a player to change images, font, name background, accent, and profile-picture fallback."],
-    ["[data-view='settings']", "Settings control the room and Discord Activity. The connector now keeps itself alive and reconnects automatically after interruptions."],
+    ["[data-view='settings']", "Settings control the room and Discord Activity. The connector reconnects automatically, but works best when you keep its Discord Activity tab open."],
   ];
 }
 
@@ -300,6 +300,12 @@ function mountTutorialHelper() {
   prompt.querySelector(".tutorial-yes").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialRevision", tutorialRevision); startTutorial(); };
   prompt.querySelector(".tutorial-no").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialRevision", tutorialRevision); };
   prompt.querySelector(".tutorial-yes").focus();
+}
+
+function refreshTutorialHelper() {
+  document.querySelector(".tutorial-helper")?.remove();
+  document.querySelector(".tutorial-prompt")?.remove();
+  mountTutorialHelper();
 }
 
 function brandMarkup() {
@@ -366,6 +372,7 @@ function renderAuth(needsSetup) {
       const result = await api(`/api/auth/${needsSetup ? "setup" : "login"}`, { method: "POST", body: JSON.stringify({ username: form.get("username"), password: form.get("password") }) });
       csrfToken = result.csrfToken;
       await initializeHost();
+      refreshTutorialHelper();
     } catch (error) {
       document.querySelector("#auth-error").textContent = error.message;
       button.disabled = false;
@@ -412,7 +419,7 @@ function stopDashboardLive() {
 }
 
 function playerSignature(players = []) {
-  return players.map((player) => [player.id, player.mediaMode, player.idleImage || "", player.talkingImage || "", player.discordAvatar || "", player.useDiscordAvatar !== false, player.nameBackground || "solid"].join(":")).join("|");
+  return players.map((player) => [player.id, player.mediaMode, player.idleImage || "", player.talkingImage || "", player.discordAvatar || "", player.useDiscordAvatar !== false, player.nameBackground || "solid", player.idleTransparent !== false].join(":")).join("|");
 }
 
 function hasCustomPlacement(players = []) {
@@ -421,6 +428,7 @@ function hasCustomPlacement(players = []) {
 
 function applyPlayerState(avatar, player, includePlacement = true) {
   avatar.classList.toggle("speaking", Boolean(player.speaking));
+  avatar.classList.toggle("idle-opaque", player.idleTransparent === false);
   avatar.classList.remove("animation-none", "animation-bounce", "animation-pulse", "animation-shake", "animation-glow");
   avatar.classList.add(`animation-${["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none"}`);
   avatar.classList.remove(...nameFontValues.map((font) => `font-${font}`));
@@ -518,6 +526,7 @@ const placementPayload = (players) => players.map((player) => ({
   nameSize: clamp(player.nameSize || 1, 0.5, 3),
   nameX: clamp(player.nameOffsetX || 0, -100, 100),
   nameY: clamp(player.nameOffsetY || 0, -100, 100),
+  idleTransparent: player.idleTransparent !== false,
 }));
 
 async function savePlacements(players) {
@@ -580,6 +589,8 @@ function bindPlacementEditor() {
   const nameSizeInput = document.querySelector("#name-size");
   const nameSizeOutput = document.querySelector("#name-size-output");
   const namePositionInput = document.querySelector("#name-position");
+  const idleAppearanceInput = document.querySelector("#idle-appearance");
+  const idleAppearanceRow = document.querySelector("#idle-appearance-row");
   const snapInput = document.querySelector("#placement-snap");
   const snapGuideX = document.querySelector("#snap-guide-x");
   const snapGuideY = document.querySelector("#snap-guide-y");
@@ -594,6 +605,8 @@ function bindPlacementEditor() {
     nameSizeInput.value = String(clamp(player.nameSize || 1, 0.5, 3));
     nameSizeOutput.textContent = `${Math.round(Number(nameSizeInput.value) * 100)}%`;
     selectedName.textContent = `Arrange ${player.name}`;
+    if (idleAppearanceInput) idleAppearanceInput.value = player.idleTransparent === false ? "solid" : "faded";
+    if (idleAppearanceRow) idleAppearanceRow.hidden = player.mediaMode === "webcam";
     preview.querySelectorAll(".avatar").forEach((entry) => entry.classList.toggle("placement-selected", entry.dataset.playerId === player.id));
   };
   const setSelectedSize = (size, save = false) => {
@@ -641,6 +654,13 @@ function bindPlacementEditor() {
     avatar?.style.setProperty("--name-x", `${player.nameOffsetX}cqw`);
     avatar?.style.setProperty("--name-y", `${player.nameOffsetY}cqh`);
     namePositionInput.value = "current";
+    savePlacements([player]).catch((error) => toast(error.message));
+  };
+  if (idleAppearanceInput) idleAppearanceInput.onchange = () => {
+    const player = selectedPlayer();
+    if (!player) return;
+    player.idleTransparent = idleAppearanceInput.value !== "solid";
+    preview.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`)?.classList.toggle("idle-opaque", !player.idleTransparent);
     savePlacements([player]).catch((error) => toast(error.message));
   };
   preview.querySelectorAll(".avatar").forEach((avatar) => {
@@ -771,7 +791,7 @@ function renderDashboard() {
         <section class="card">
           <div class="card-head"><div><h2>Live preview</h2><p class="subtle">This now follows the same live feed as OBS.</p></div><span id="live-count-badge" class="badge ${session.onlineCount ? "live" : ""}">${session.onlineCount ? `${session.onlineCount} ONLINE` : "PREVIEW"}</span></div>
           <div class="placement-toolbar"><button id="edit-placement" class="btn ${placementEditing ? "primary" : "ghost"}" type="button">${placementEditing ? "Done arranging" : "Arrange players"}</button><button id="reset-placement" class="btn ghost" type="button" ${customArrangement ? "" : "hidden"}>Reset arrangement</button><span>${placementEditing ? "Drag players to move them. Select one and use the size controls." : "Positions are shared with the OBS browser source."}</span></div>
-          ${placementEditing && players.length ? `<div class="placement-controls"><strong id="selected-placement-name">Arrange player</strong><div class="placement-control-row"><span>Avatar size</span><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div><div class="placement-control-row"><span>Name size</span><button id="name-smaller" class="btn compact" type="button" aria-label="Make selected name smaller">Smaller</button><input id="name-size" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="Selected name size" /><output id="name-size-output">100%</output><button id="name-larger" class="btn compact" type="button" aria-label="Make selected name larger">Larger</button></div><div class="placement-name-position"><label for="name-position">Name position</label><select id="name-position" class="input">${namePositionOptions()}</select></div><label class="placement-snap"><input id="placement-snap" type="checkbox" ${placementSnapEnabled ? "checked" : ""} /><span>Snap to other players and the canvas center</span></label><p>Choose a name position, then drag the label for fine adjustment.</p></div>` : ""}
+          ${placementEditing && players.length ? `<div class="placement-controls"><strong id="selected-placement-name">Arrange player</strong><div class="placement-control-row"><span>Avatar size</span><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div><div class="placement-control-row"><span>Name size</span><button id="name-smaller" class="btn compact" type="button" aria-label="Make selected name smaller">Smaller</button><input id="name-size" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="Selected name size" /><output id="name-size-output">100%</output><button id="name-larger" class="btn compact" type="button" aria-label="Make selected name larger">Larger</button></div><div class="placement-name-position"><label for="name-position">Name position</label><select id="name-position" class="input">${namePositionOptions()}</select></div><div id="idle-appearance-row" class="placement-name-position"><label for="idle-appearance">Idle appearance</label><select id="idle-appearance" class="input"><option value="faded">Transparent while idle</option><option value="solid">Fully visible while idle</option></select></div><label class="placement-snap"><input id="placement-snap" type="checkbox" ${placementSnapEnabled ? "checked" : ""} /><span>Snap to other players and the canvas center</span></label><p>Select a PNGTuber to edit its idle appearance. Choose a name position, then drag the label for fine adjustment.</p></div>` : ""}
           <div id="live-preview" class="preview ${escapeHtml(session.background)} ${escapeHtml(session.layout)} ${customArrangement ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${placementEditing ? `<div id="snap-guide-x" class="snap-guide vertical" hidden></div><div id="snap-guide-y" class="snap-guide horizontal" hidden></div>` : ""}${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
           <div class="game-strip"><span>Works with</span><strong>R.E.P.O.</strong><strong>PEAK</strong><strong>Meccha Chameleon</strong><strong>Any game</strong></div>
         </section>
@@ -811,7 +831,7 @@ function renderDashboard() {
           <section class="card stack"><div><h2>Room identity</h2><p class="subtle">Shown in the host dashboard and guest join page.</p></div><div class="field"><label>Room name</label><input class="input" name="name" value="${escapeHtml(session.name)}" maxlength="80" /></div></section>
           <section class="card stack"><div><h2>Overlay appearance</h2><p class="subtle">Choose how avatars and cameras are arranged in OBS.</p></div><div class="field"><label>Layout</label><select class="input" name="layout">${customArrangement ? `<option value="" selected disabled>Custom arrangement</option>` : ""}<option value="row" ${!customArrangement && session.layout === "row" ? "selected" : ""}>Horizontal row</option><option value="arc" ${!customArrangement && session.layout === "arc" ? "selected" : ""}>Soft arc</option><option value="stack" ${!customArrangement && session.layout === "stack" ? "selected" : ""}>Vertical stack</option></select><span class="hint">Choosing an automatic layout clears saved custom positions.</span></div><div class="field"><label>Preview background</label><select class="input" name="background"><option value="transparent" ${session.background === "transparent" ? "selected" : ""}>Transparent</option><option value="checker" ${session.background === "checker" ? "selected" : ""}>Checker</option><option value="dark" ${session.background === "dark" ? "selected" : ""}>Dark</option></select></div></section>
           <section class="card stack discord-card">
-            <div><h2>Discord Activity call connector</h2><p class="subtle">Use Discord's own speaking events in direct calls, group DMs, and server calls. Launch PNGCalls from Discord's App Launcher while the call is active. No EXE, microphone threshold, or repeated pairing code is needed.</p></div>
+            <div><h2>Discord Activity call connector</h2><p class="subtle">Use Discord's own speaking events in direct calls, group DMs, and server calls. Launch PNGCalls from Discord's App Launcher while the call is active and keep that Activity tab open for the most reliable connection. No EXE, microphone threshold, or repeated pairing code is needed.</p></div>
             <div class="field"><label for="discord-callback">Website OAuth redirect</label><div class="copy-field"><input id="discord-callback" class="input mono" value="${escapeHtml(discordConnection?.callbackUrl || `${origin}/auth/discord/callback`)}" readonly /><button id="copy-discord-callback" class="btn" type="button">Copy</button></div><span class="hint">Keep this redirect for linking your host Discord account. For the Activity itself, Discord also requires the placeholder redirect https://127.0.0.1.</span></div>
             <div class="two-col"><div class="field"><label for="discord-client-id">Application client ID</label><input id="discord-client-id" class="input mono" inputmode="numeric" value="${escapeHtml(discordConnection?.clientId || "")}" placeholder="Discord client ID" /></div><div class="field"><label for="discord-client-secret">Client secret</label><input id="discord-client-secret" class="input" type="password" autocomplete="new-password" placeholder="${discordConnection?.configured ? "Leave blank to keep the saved secret" : "Discord client secret"}" /></div></div>
             <p class="hint">The client secret and Discord tokens are encrypted in SQLite and never sent to the browser. Add your Discord account under the application testers while developing RPC access.</p>
@@ -887,6 +907,7 @@ function renderDashboard() {
   document.querySelector("#sign-out").onclick = async () => {
     await api("/api/auth/logout", { method: "POST" });
     await initializeHost();
+    refreshTutorialHelper();
   };
   document.querySelector("#copy-discord-callback").onclick = () => navigator.clipboard.writeText(document.querySelector("#discord-callback").value).then(() => toast("Discord redirect URL copied"));
   document.querySelector("#save-discord-config").onclick = async () => {
@@ -1289,8 +1310,10 @@ async function startMic(id, joinToken, identity, storageKey) {
   </section></main>`;
 
   let leaving = false;
+  let presenceSocket;
   document.querySelector("#leave-room").onclick = async () => {
     leaving = true;
+    presenceSocket?.close();
     document.querySelector("#leave-room").disabled = true;
     await api(`/api/join/${id}/${joinToken}/${identity.playerId}/leave`, { method: "POST" }).catch(() => {});
     localStorage.removeItem(storageKey);
@@ -1308,7 +1331,23 @@ async function startMic(id, joinToken, identity, storageKey) {
     }
   });
   heartbeat();
-  setInterval(heartbeat, 500);
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const sendSpeakingState = () => {
+    if (presenceSocket?.readyState === WebSocket.OPEN) presenceSocket.send(JSON.stringify({ type: "state", speaking }));
+  };
+  const connectPresence = () => {
+    if (leaving) return;
+    const activeSocket = new WebSocket(`${protocol}//${location.host}/ws/join/${encodeURIComponent(id)}/${encodeURIComponent(joinToken)}/${encodeURIComponent(identity.playerId)}`);
+    presenceSocket = activeSocket;
+    activeSocket.onopen = sendSpeakingState;
+    activeSocket.onclose = () => {
+      if (leaving || presenceSocket !== activeSocket) return;
+      presenceSocket = null;
+      heartbeat().finally(() => { if (!leaving) setTimeout(connectPresence, 1200); });
+    };
+  };
+  connectPresence();
+  setInterval(() => { if (!presenceSocket || presenceSocket.readyState > WebSocket.OPEN) heartbeat(); }, 3000);
 
   const requestedFps = identity.cameraFps === 60 ? 60 : 30;
   let stream;
@@ -1360,7 +1399,6 @@ async function startMic(id, joinToken, identity, storageKey) {
       requestAnimationFrame(drawPreview);
     };
     drawPreview();
-    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     let cameraSocket;
     const connectPublisher = () => {
       cameraSocket = new WebSocket(`${protocol}//${location.host}/ws/publish/${encodeURIComponent(id)}/${encodeURIComponent(joinToken)}/${encodeURIComponent(identity.playerId)}`);
@@ -1399,28 +1437,43 @@ async function startMic(id, joinToken, identity, storageKey) {
     await setFrameRate(identity.cameraFps);
   }
 
-  const audioContext = new AudioContext();
-  const analyser = audioContext.createAnalyser();
-  analyser.fftSize = 512;
-  analyser.smoothingTimeConstant = 0.45;
-  audioContext.createMediaStreamSource(stream).connect(analyser);
-  const samples = new Float32Array(analyser.fftSize);
-  let silenceFrames = 0;
-
-  const measure = () => {
-    analyser.getFloatTimeDomainData(samples);
-    let energy = 0;
-    for (const value of samples) energy += value * value;
-    const level = Math.sqrt(energy / samples.length);
-    const detected = level > 0.035;
-    silenceFrames = detected ? 0 : silenceFrames + 1;
-    speaking = detected || (speaking && silenceFrames < 10);
+  const updateSpeaking = (nextSpeaking, level) => {
+    const changed = speaking !== nextSpeaking;
+    speaking = nextSpeaking;
     document.querySelector("#guest-live-preview .avatar")?.classList.toggle("speaking", speaking);
     document.querySelector("#meter-bar").style.transform = `scaleX(${Math.min(1, level * 12)})`;
     document.querySelector("#mic-label").textContent = speaking ? "Speaking" : "Listening for your voice";
+    if (changed) sendSpeakingState();
   };
-  measure();
-  setInterval(measure, 80);
+  const audioContext = new AudioContext();
+  const source = audioContext.createMediaStreamSource(stream);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && audioContext.state === "suspended") audioContext.resume().catch(() => {}); });
+  try {
+    await audioContext.audioWorklet.addModule("/speech-detector-worklet.js?v=1");
+    const detector = new AudioWorkletNode(audioContext, "pngcalls-speech-detector");
+    const silentOutput = audioContext.createGain();
+    silentOutput.gain.value = 0;
+    source.connect(detector).connect(silentOutput).connect(audioContext.destination);
+    detector.port.onmessage = (event) => updateSpeaking(Boolean(event.data?.speaking), Number(event.data?.level || 0));
+  } catch {
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.45;
+    source.connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    let silenceFrames = 0;
+    const measure = () => {
+      analyser.getFloatTimeDomainData(samples);
+      let energy = 0;
+      for (const value of samples) energy += value * value;
+      const level = Math.sqrt(energy / samples.length);
+      const detected = level > 0.035;
+      silenceFrames = detected ? 0 : silenceFrames + 1;
+      updateSpeaking(detected || (speaking && silenceFrames < 10), level);
+    };
+    measure();
+    setInterval(measure, 80);
+  }
 }
 
 async function runOverlay() {

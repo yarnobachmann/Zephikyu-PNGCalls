@@ -1,0 +1,1 @@
+ALTER TABLE "Player" ADD COLUMN "idleTransparent" BOOLEAN NOT NULL DEFAULT true;

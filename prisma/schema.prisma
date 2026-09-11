@@ -63,6 +63,7 @@ model Player {
   positionY         Float?
   displaySize       Float     @default(1)
   displayLayer      Int       @default(0)
+  idleTransparent   Boolean   @default(true)
   room              Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
   presence          Presence?
 

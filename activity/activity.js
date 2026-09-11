@@ -110,11 +110,11 @@ function connectRoom() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const activeSocket = new WebSocket(`${protocol}//${location.host}/ws/activity/${encodeURIComponent(selectedRoom)}/${encodeURIComponent(bridgeToken)}`);
   socket = activeSocket;
-  setStatus("Connecting to PNGCalls", "The Activity will stay quiet in the background.");
+  setStatus("Connecting to PNGCalls", "Keep this Activity tab open for the most reliable connection.");
   activeSocket.addEventListener("open", () => {
     if (socket !== activeSocket) return;
     reconnectAttempt = 0;
-    setStatus("Call detection is live", "Checking the current call participants...");
+    setStatus("Call detection is live", "Checking the current call participants. Keep this Activity tab open for best results.");
     sendSnapshot();
     heartbeat = setInterval(() => {
       sendSnapshot();

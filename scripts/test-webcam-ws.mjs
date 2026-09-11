@@ -40,6 +40,7 @@ let viewer;
 let stateViewer;
 let companion;
 let activity;
+let guestPresence;
 try {
   await waitForServer;
   const setupResponse = await fetch(`${baseUrl}/api/auth/setup`, {
@@ -197,6 +198,12 @@ try {
   assert.equal(joinResponse.status, 201);
   const participant = await joinResponse.json();
   const guestCookie = cookiesFrom(joinResponse);
+  guestPresence = await openSocket(`${socketUrl}/ws/join/${room.sessionId}/${room.joinToken}/${participant.playerId}`, guestCookie);
+  guestPresence.send(JSON.stringify({ type: "state", speaking: true }));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const guestSpeakingOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
+  assert.equal(guestSpeakingOverlay.players.find((player) => player.id === participant.playerId).speaking, true);
+  guestPresence.send(JSON.stringify({ type: "state", speaking: false }));
   assert.equal(participant.player.nameFont, "typewriter");
   assert.equal(participant.player.nameOffsetX, -14);
   assert.equal(participant.player.nameOffsetY, -32);
@@ -206,7 +213,7 @@ try {
   const placementResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/placements`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
-    body: JSON.stringify({ players: [{ id: participant.playerId, x: 21, y: 64, size: 1.4, layer: 3, nameSize: 1.65, nameX: -8, nameY: 12 }] }),
+    body: JSON.stringify({ players: [{ id: participant.playerId, x: 21, y: 64, size: 1.4, layer: 3, nameSize: 1.65, nameX: -8, nameY: 12, idleTransparent: false }] }),
   });
   assert.equal(placementResponse.status, 200);
   const placedRoom = await placementResponse.json();
@@ -218,6 +225,7 @@ try {
   assert.equal(placedPlayer.nameSize, 1.65);
   assert.equal(placedPlayer.nameOffsetX, -8);
   assert.equal(placedPlayer.nameOffsetY, 12);
+  assert.equal(placedPlayer.idleTransparent, false);
   const placedOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
   const placedOverlayPlayer = placedOverlay.players.find((player) => player.id === participant.playerId);
   assert.equal(placedOverlayPlayer.positionX, 21);
@@ -226,6 +234,10 @@ try {
   assert.equal(placedOverlayPlayer.nameSize, 1.65);
   assert.equal(placedOverlayPlayer.nameOffsetX, -8);
   assert.equal(placedOverlayPlayer.nameOffsetY, 12);
+  assert.equal(placedOverlayPlayer.idleTransparent, false);
+  await new Promise((resolve) => setTimeout(resolve, 7250));
+  const backgroundTabOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
+  assert.equal(backgroundTabOverlay.players.some((player) => player.id === participant.playerId), true, "An open guest presence socket must keep a silent player visible");
 
   const automaticResetResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/placements`, {
     method: "PUT",
@@ -289,6 +301,7 @@ try {
   stateViewer?.terminate();
   companion?.terminate();
   activity?.terminate();
+  guestPresence?.terminate();
   server.kill("SIGTERM");
   await Promise.race([once(server, "exit"), new Promise((resolve) => setTimeout(resolve, 5_000))]);
   rmSync(testRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
