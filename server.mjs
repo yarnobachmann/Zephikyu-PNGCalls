@@ -33,7 +33,7 @@ const auditSalt = crypto.randomBytes(32);
 const allowedImages = new Map([["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/gif", "gif"]]);
 const speakingAnimations = new Set(["none", "bounce", "pulse", "shake", "glow"]);
 const speakingAnimation = (value) => speakingAnimations.has(value) ? value : "none";
-const nameFonts = new Set(["rounded", "comic", "typewriter", "classic", "bold"]);
+const nameFonts = new Set(["rounded", "comic", "typewriter", "classic", "bold", "clean", "modern", "narrow", "slab", "elegant", "bubbly", "marker", "pixel", "fantasy", "spooky"]);
 const nameFont = (value) => nameFonts.has(value) ? value : "rounded";
 const nameBackgrounds = new Set(["solid", "none"]);
 const nameBackground = (value) => nameBackgrounds.has(value) ? value : "solid";
@@ -722,6 +722,17 @@ async function guestGuard(req, res, next) {
   req.room = room; req.player = player; next();
 }
 app.post("/api/join/:sessionId/:joinToken/:playerId/images", joinLimit, guestGuard, upload.fields([{ name: "idle", maxCount: 1 }, { name: "talking", maxCount: 1 }]), saveImages);
+app.put("/api/join/:sessionId/:joinToken/:playerId/name-style", guestGuard, async (req, res) => {
+  const player = await prisma.player.update({ where: { id: req.player.id }, data: {
+    nameFont: nameFont(req.body?.nameFont ?? req.player.nameFont),
+    nameSize: boundedNumber(req.body?.nameSize, 0.5, 3, req.player.nameSize || 1),
+    nameOffsetX: boundedNumber(req.body?.nameOffsetX, -100, 100, req.player.nameOffsetX || 0),
+    nameOffsetY: boundedNumber(req.body?.nameOffsetY, -100, 100, req.player.nameOffsetY || 0),
+  } });
+  await prisma.room.update({ where: { id: req.room.id }, data: { updatedAt: new Date() } });
+  await broadcast(req.room.id);
+  res.json(player);
+});
 app.post("/api/join/:sessionId/:joinToken/:playerId/heartbeat", heartbeatLimit, guestGuard, async (req, res) => {
   await prisma.presence.upsert({ where: { playerId: req.player.id }, create: { playerId: req.player.id, present: true, speaking: Boolean(req.body?.speaking), muted: Boolean(req.body?.muted), source: "browser" }, update: { present: true, speaking: Boolean(req.body?.speaking), muted: Boolean(req.body?.muted), source: "browser", lastSeen: new Date() } });
   await broadcast(req.room.id); res.json({ ok: true });

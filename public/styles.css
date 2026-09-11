@@ -83,6 +83,16 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .font-typewriter, .font-typewriter .avatar-name { font-family: "Courier New", ui-monospace, monospace; }
 .font-classic, .font-classic .avatar-name { font-family: Georgia, "Times New Roman", serif; }
 .font-bold, .font-bold .avatar-name { font-family: Impact, "Arial Black", sans-serif; letter-spacing: .035em; text-transform: uppercase; }
+.font-clean, .font-clean .avatar-name { font-family: Arial, Helvetica, sans-serif; }
+.font-modern, .font-modern .avatar-name { font-family: "Century Gothic", Futura, "Trebuchet MS", sans-serif; letter-spacing: .025em; }
+.font-narrow, .font-narrow .avatar-name { font-family: "Arial Narrow", "Franklin Gothic Condensed", Impact, sans-serif; font-stretch: condensed; }
+.font-slab, .font-slab .avatar-name { font-family: Rockwell, "Roboto Slab", Georgia, serif; font-weight: 700; }
+.font-elegant, .font-elegant .avatar-name { font-family: "Palatino Linotype", Palatino, Garamond, serif; font-style: italic; }
+.font-bubbly, .font-bubbly .avatar-name { font-family: "Cooper Black", "Arial Rounded MT Bold", "Trebuchet MS", sans-serif; }
+.font-marker, .font-marker .avatar-name { font-family: "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive; font-weight: 700; }
+.font-pixel, .font-pixel .avatar-name { font-family: "Lucida Console", Consolas, "Courier New", monospace; font-weight: 700; letter-spacing: .04em; }
+.font-fantasy, .font-fantasy .avatar-name { font-family: Papyrus, Harrington, fantasy; font-weight: 700; }
+.font-spooky, .font-spooky .avatar-name { font-family: Chiller, Jokerman, fantasy; font-size: 1.15em; letter-spacing: .035em; }
 .preview.dark { background: #040203; background-image: none; }
 .preview.checker { background-color: #100509; }
 .placement-toolbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin: 0 0 12px; }
@@ -155,6 +165,8 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .guest-preview-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .guest-preview-heading span { color: var(--muted); font-size: .82rem; }
 .guest-preview-panel .preview { width: 100%; }
+.guest-name-controls { margin-bottom: 20px; text-align: left; }
+.guest-name-controls .crop-heading .hint { margin: 0; }
 .camera-preview { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 18px; border: 1px solid #6d1d2e; background: #050203; }
 .camera-picker { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 20px 13px 22px 14px; background: #0d0608; }
 .camera-picker[hidden] { display: none; }

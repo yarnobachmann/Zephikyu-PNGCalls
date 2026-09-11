@@ -16,7 +16,7 @@ let placementSnapEnabled = localStorage.getItem("pngcalls.placementSnap") !== "f
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, Number(value)));
-const nameFontValues = ["rounded", "comic", "typewriter", "classic", "bold"];
+const nameFontValues = ["rounded", "comic", "typewriter", "classic", "bold", "clean", "modern", "narrow", "slab", "elegant", "bubbly", "marker", "pixel", "fantasy", "spooky"];
 const normalizeNameFont = (value) => nameFontValues.includes(value) ? value : "rounded";
 const nameFontOptions = (selected = "rounded") => [
   ["rounded", "Friendly rounded"],
@@ -24,11 +24,21 @@ const nameFontOptions = (selected = "rounded") => [
   ["typewriter", "Typewriter"],
   ["classic", "Classic serif"],
   ["bold", "Big and bold"],
+  ["clean", "Clean sans"],
+  ["modern", "Modern geometric"],
+  ["narrow", "Tall condensed"],
+  ["slab", "Strong slab serif"],
+  ["elegant", "Elegant book serif"],
+  ["bubbly", "Bubbly display"],
+  ["marker", "Marker pen"],
+  ["pixel", "Retro pixel"],
+  ["fantasy", "Fantasy"],
+  ["spooky", "Spooky"],
 ].map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
 const namePositionPresets = {
   overlay: { x: 0, y: 0 },
   below: { x: 0, y: 8 },
-  above: { x: 0, y: -68 },
+  above: { x: 0, y: -38 },
   left: { x: -14, y: -32 },
   right: { x: 14, y: -32 },
 };
@@ -208,11 +218,11 @@ function toast(message) {
 }
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
-const tutorialRevision = "6";
+const tutorialRevision = "7";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
     ["input[name='name']", "Enter your display name. PNGCalls remembers it and the other setup choices on this device."],
-    ["#name-font", "Choose how your display name should look in the room and OBS. This choice is remembered too."],
+    ["#name-font", "Choose from the expanded font collection. Your selection is used in the room and OBS and is remembered."],
     ["#join-name-position", "Place your name on, below, above, left, or right of your avatar. The host can still fine tune it later."],
     ["#media-mode", "Choose PNG images or Webcam. Selecting Webcam hides the PNG uploads and opens the camera setup."],
     ["#png-fields", "Choose separate idle and talking images. Both are fitted into the same frame, preloaded, and crossfade smoothly when you speak."],
@@ -224,6 +234,7 @@ function tutorialSteps() {
   ];
   if (isJoin) return [
     ["#guest-live-preview", "This is how you appear in the overlay. Speak to test the talking image, accent, name, and animation live."],
+    ["#guest-name-controls", "Fine tune your name here. Change its font and use the sliders to move or resize it while watching the live preview."],
     ["#camera-output-preview", "This is the exact camera crop sent to the overlay."],
     ["#crop-controls", "Adjust zoom and position here. Changes are saved on this device."],
     [".meter", "The meter shows microphone activity. Your speaking state changes automatically."],
@@ -1303,6 +1314,13 @@ async function startMic(id, joinToken, identity, storageKey) {
     <h1>Keep this tab open</h1>
     <p class="join-copy">${useWebcam ? "Your camera frames go to this PNGCalls server while this tab stays open." : "You can minimize this window. Only your speaking status is sent to the overlay."}</p>
     <section class="guest-preview-panel"><div class="guest-preview-heading"><strong>Your overlay preview</strong><span>Speak to test it</span></div><div id="guest-live-preview" class="preview">${avatarMarkup(previewPlayer)}</div></section>
+    <section id="guest-name-controls" class="crop-controls guest-name-controls">
+      <div class="crop-heading"><strong>Adjust your name</strong><span id="guest-name-save-state" class="hint">Changes save to the overlay</span></div>
+      <div class="field"><label for="guest-name-font">Font</label><select id="guest-name-font" class="input font-${normalizeNameFont(identity.nameFont)}">${nameFontOptions(normalizeNameFont(identity.nameFont))}</select></div>
+      <label for="guest-name-size"><span>Name size</span><output id="guest-name-size-value">${Math.round((identity.nameSize ?? 1) * 100)}%</output></label><input id="guest-name-size" type="range" min="0.5" max="3" step="0.05" value="${clamp(identity.nameSize ?? 1, 0.5, 3)}" />
+      <label for="guest-name-x"><span>Horizontal position</span><output id="guest-name-x-value">${Math.round(identity.nameOffsetX ?? 0)}</output></label><input id="guest-name-x" type="range" min="-100" max="100" step="1" value="${clamp(identity.nameOffsetX ?? 0, -100, 100)}" />
+      <label for="guest-name-y"><span>Vertical position</span><output id="guest-name-y-value">${Math.round(identity.nameOffsetY ?? 8)}</output></label><input id="guest-name-y" type="range" min="-100" max="100" step="1" value="${clamp(identity.nameOffsetY ?? 8, -100, 100)}" />
+    </section>
     ${useWebcam ? `<video id="camera-preview" autoplay muted playsinline hidden></video><div class="field"><label for="live-camera-fps">Frame rate</label><select id="live-camera-fps" class="input"><option value="30" ${identity.cameraFps === 60 ? "" : "selected"}>30 FPS</option><option value="60" ${identity.cameraFps === 60 ? "selected" : ""}>60 FPS</option></select></div>${cropControlsMarkup()}` : ""}
     <div class="meter"><span id="meter-bar"></span></div>
     <div class="mic-state"><span class="dot live"></span><strong id="mic-label">Listening for your voice</strong></div>
@@ -1311,6 +1329,44 @@ async function startMic(id, joinToken, identity, storageKey) {
 
   let leaving = false;
   let presenceSocket;
+  const previewAvatar = document.querySelector("#guest-live-preview .avatar");
+  const guestNameFont = document.querySelector("#guest-name-font");
+  const guestNameSize = document.querySelector("#guest-name-size");
+  const guestNameX = document.querySelector("#guest-name-x");
+  const guestNameY = document.querySelector("#guest-name-y");
+  const guestNameSaveState = document.querySelector("#guest-name-save-state");
+  const syncGuestNameControls = () => {
+    identity.nameFont = normalizeNameFont(guestNameFont.value);
+    identity.nameSize = clamp(guestNameSize.value, 0.5, 3);
+    identity.nameOffsetX = clamp(guestNameX.value, -100, 100);
+    identity.nameOffsetY = clamp(guestNameY.value, -100, 100);
+    previewAvatar.classList.remove(...nameFontValues.map((font) => `font-${font}`));
+    previewAvatar.classList.add(`font-${identity.nameFont}`);
+    previewAvatar.style.setProperty("--name-size", identity.nameSize);
+    previewAvatar.style.setProperty("--name-x", `${identity.nameOffsetX}cqw`);
+    previewAvatar.style.setProperty("--name-y", `${identity.nameOffsetY}cqh`);
+    guestNameFont.className = `input font-${identity.nameFont}`;
+    document.querySelector("#guest-name-size-value").textContent = `${Math.round(identity.nameSize * 100)}%`;
+    document.querySelector("#guest-name-x-value").textContent = `${Math.round(identity.nameOffsetX)}`;
+    document.querySelector("#guest-name-y-value").textContent = `${Math.round(identity.nameOffsetY)}`;
+    localStorage.setItem(storageKey, JSON.stringify(identity));
+  };
+  const saveGuestNameControls = async () => {
+    syncGuestNameControls();
+    guestNameSaveState.textContent = "Saving...";
+    try {
+      await api(`/api/join/${id}/${joinToken}/${identity.playerId}/name-style`, { method: "PUT", body: JSON.stringify({ nameFont: identity.nameFont, nameSize: identity.nameSize, nameOffsetX: identity.nameOffsetX, nameOffsetY: identity.nameOffsetY }) });
+      guestNameSaveState.textContent = "Saved to the overlay";
+    } catch (error) {
+      guestNameSaveState.textContent = "Could not save";
+      toast(error.message);
+    }
+  };
+  [guestNameSize, guestNameX, guestNameY].forEach((input) => {
+    input.oninput = syncGuestNameControls;
+    input.onchange = saveGuestNameControls;
+  });
+  guestNameFont.onchange = saveGuestNameControls;
   document.querySelector("#leave-room").onclick = async () => {
     leaving = true;
     presenceSocket?.close();

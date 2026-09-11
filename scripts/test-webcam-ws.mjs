@@ -210,6 +210,24 @@ try {
   const overlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
   assert.equal(overlay.players.find((player) => player.id === participant.playerId).nameFont, "typewriter");
 
+  const styledGuestResponse = await fetch(`${baseUrl}/api/join/${room.sessionId}/${room.joinToken}/${participant.playerId}/name-style`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Cookie: guestCookie },
+    body: JSON.stringify({ nameFont: "spooky", nameSize: 1.35, nameOffsetX: 7, nameOffsetY: -24 }),
+  });
+  assert.equal(styledGuestResponse.status, 200);
+  const styledGuest = await styledGuestResponse.json();
+  assert.equal(styledGuest.nameFont, "spooky");
+  assert.equal(styledGuest.nameSize, 1.35);
+  assert.equal(styledGuest.nameOffsetX, 7);
+  assert.equal(styledGuest.nameOffsetY, -24);
+  const guestStyledOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
+  const guestStyledOverlayPlayer = guestStyledOverlay.players.find((player) => player.id === participant.playerId);
+  assert.equal(guestStyledOverlayPlayer.nameFont, "spooky");
+  assert.equal(guestStyledOverlayPlayer.nameSize, 1.35);
+  assert.equal(guestStyledOverlayPlayer.nameOffsetX, 7);
+  assert.equal(guestStyledOverlayPlayer.nameOffsetY, -24);
+
   const placementResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/placements`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
@@ -300,7 +318,7 @@ try {
   assert.equal(restoredJoinResponse.status, 200);
   const restoredParticipant = await restoredJoinResponse.json();
   assert.equal(restoredParticipant.playerId, participant.playerId);
-  assert.equal(restoredParticipant.player.nameFont, "typewriter");
+  assert.equal(restoredParticipant.player.nameFont, "spooky");
   assert.equal(restoredParticipant.player.idleTransparent, false);
   const unchangedOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`);
   assert.equal(unchangedOverlay.status, 200);
