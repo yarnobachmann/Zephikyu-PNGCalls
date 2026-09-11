@@ -123,9 +123,11 @@ function avatarMarkup(player) {
   const nameSize = clamp(player.nameSize || 1, 0.5, 3);
   const nameX = clamp(player.nameOffsetX || 0, -100, 100);
   const nameY = clamp(player.nameOffsetY || 0, -100, 100);
+  const renderedNameX = nameX * size;
+  const renderedNameY = nameY * size;
   const layer = Math.round(clamp(player.displayLayer || 0, 0, 1000));
   const nameBackgroundClass = player.nameBackground === "none" ? " no-background" : "";
-  return `<article class="avatar font-${font} ${positioned ? "custom-position" : ""} ${isWebcam ? "webcam" : ""} ${player.idleTransparent === false ? "idle-opaque" : ""} ${player.nameVisible === false ? "name-hidden" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" data-speaking="${player.speaking ? "true" : "false"}" style="--accent:${escapeHtml(player.accent)};--x:${x}%;--y:${y}%;--size:${size};--layer:${layer};--name-size:${nameSize};--name-x:${nameX}cqw;--name-y:${nameY}cqh;--name-bg:${escapeHtml(player.nameBackgroundColor || "#090305")}">
+  return `<article class="avatar font-${font} ${positioned ? "custom-position" : ""} ${isWebcam ? "webcam" : ""} ${player.idleTransparent === false ? "idle-opaque" : ""} ${player.nameVisible === false ? "name-hidden" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" data-speaking="${player.speaking ? "true" : "false"}" style="--accent:${escapeHtml(player.accent)};--x:${x}%;--y:${y}%;--size:${size};--layer:${layer};--name-size:${nameSize};--name-x:${renderedNameX}cqw;--name-y:${renderedNameY}cqh;--name-bg:${escapeHtml(player.nameBackgroundColor || "#090305")}">
     <div class="avatar-visual">${isWebcam && player.localWebcamPreview ? `<canvas id="camera-output-preview" class="avatar-img webcam-img" width="640" height="360" aria-label="${escapeHtml(player.name)} camera preview"></canvas>` : isWebcam && player.webcamImage ? `<img class="avatar-img webcam-img" src="${escapeHtml(player.webcamImage)}?v=${Date.now()}" data-webcam-src="${escapeHtml(player.webcamImage)}" alt="${escapeHtml(player.name)} webcam" />` : idleImage ? `<img class="avatar-img avatar-img-idle" src="${escapeHtml(idleImage)}" data-source="${escapeHtml(idleImage)}" alt="" /><img class="avatar-img avatar-img-talking" src="${escapeHtml(talkingImage)}" data-source="${escapeHtml(talkingImage)}" alt="${escapeHtml(player.name)}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}</div>
     <div class="avatar-name${nameBackgroundClass}" title="Drag to move the name">${escapeHtml(player.name)}</div>
     <button class="avatar-resize" type="button" aria-label="Resize ${escapeHtml(player.name)}" title="Drag to resize">↘</button>
@@ -140,6 +142,13 @@ function restartTalkingGif(avatar, source) {
   restarted.dataset.source = source;
   restarted.src = `${source}${source.includes("#") ? "&" : "#"}pngcalls-${Date.now()}`;
   image.replaceWith(restarted);
+}
+
+function positionAvatarName(avatar, player) {
+  if (!avatar) return;
+  const size = clamp(player.displaySize || 1, 0.4, 2.5);
+  avatar.style.setProperty("--name-x", `${clamp(player.nameOffsetX || 0, -100, 100) * size}cqw`);
+  avatar.style.setProperty("--name-y", `${clamp(player.nameOffsetY || 0, -100, 100) * size}cqh`);
 }
 
 setInterval(() => {
@@ -228,7 +237,7 @@ function toast(message) {
 }
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
-const tutorialRevision = "8";
+const tutorialRevision = "9";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
     ["input[name='name']", "Enter your display name. PNGCalls remembers it and the other setup choices on this device."],
@@ -259,7 +268,7 @@ function tutorialSteps() {
     ["#copy-join", "Copy this invitation link and send it to every player who should appear."],
     ["[data-reset-player-link]", "Reset the invitation between streams without changing OBS. Current players disconnect, but their saved names, styling, and uploaded PNGs return when they join the new invitation from the same browser."],
     ["#copy-overlay", "Copy this private link into an OBS Browser Source. Speaking changes use the same direct live connection as this preview."],
-    ["#edit-placement", "Open Arrange players to drag and resize avatars and names. Select a PNGTuber to choose whether it fades while idle, and use the name and snapping controls for precise placement."],
+    ["#edit-placement", "Open Arrange players to drag and resize avatars and names. Name positions now stay attached when their character is resized. Select a PNGTuber for idle appearance, name visibility, and snapping controls."],
     ["[data-view='players']", "The player room shows everyone who joined. Edit a player to change images, font, name background, accent, and profile-picture fallback."],
     ["[data-view='settings']", "Settings control the room and Discord Activity. The connector reconnects automatically, but works best when you keep its Discord Activity tab open."],
   ];
@@ -459,8 +468,7 @@ function applyPlayerState(avatar, player, includePlacement = true) {
   avatar.classList.add(`font-${normalizeNameFont(player.nameFont)}`);
   avatar.style.setProperty("--accent", player.accent);
   avatar.style.setProperty("--name-size", clamp(player.nameSize || 1, 0.5, 3));
-  avatar.style.setProperty("--name-x", `${clamp(player.nameOffsetX || 0, -100, 100)}cqw`);
-  avatar.style.setProperty("--name-y", `${clamp(player.nameOffsetY || 0, -100, 100)}cqh`);
+  positionAvatarName(avatar, player);
   avatar.style.setProperty("--name-bg", player.nameBackgroundColor || "#090305");
   const nameLabel = avatar.querySelector(".avatar-name");
   nameLabel.textContent = player.name;
@@ -640,7 +648,9 @@ function bindPlacementEditor() {
     const player = selectedPlayer();
     if (!player) return;
     player.displaySize = clamp(size, 0.4, 2.5);
-    preview.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`)?.style.setProperty("--size", player.displaySize);
+    const avatar = preview.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`);
+    avatar?.style.setProperty("--size", player.displaySize);
+    positionAvatarName(avatar, player);
     syncSizeControls();
     if (save) savePlacements([player]).catch((error) => toast(error.message));
   };
@@ -687,8 +697,7 @@ function bindPlacementEditor() {
     player.nameOffsetY = preset.y;
     const avatar = preview.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`);
     avatar?.classList.remove("name-hidden");
-    avatar?.style.setProperty("--name-x", `${player.nameOffsetX}cqw`);
-    avatar?.style.setProperty("--name-y", `${player.nameOffsetY}cqh`);
+    positionAvatarName(avatar, player);
     namePositionInput.value = "current";
     savePlacements([player]).catch((error) => toast(error.message));
   };
@@ -725,8 +734,9 @@ function bindPlacementEditor() {
         if (snapGuideX) snapGuideX.hidden = true;
         if (snapGuideY) snapGuideY.hidden = true;
         if (movingName) {
-          player.nameOffsetX = clamp(initialNameX + ((moveEvent.clientX - startX) / previewRect.width) * 100, -100, 100);
-          player.nameOffsetY = clamp(initialNameY + ((moveEvent.clientY - startY) / previewRect.height) * 100, -100, 100);
+          const activeScale = clamp(player.displaySize || 1, 0.4, 2.5);
+          player.nameOffsetX = clamp(initialNameX + (((moveEvent.clientX - startX) / previewRect.width) * 100) / activeScale, -100, 100);
+          player.nameOffsetY = clamp(initialNameY + (((moveEvent.clientY - startY) / previewRect.height) * 100) / activeScale, -100, 100);
         } else if (resizing) {
           const resizeDistance = ((moveEvent.clientX - startX) + (moveEvent.clientY - startY)) / 2;
           player.displaySize = clamp(initialSize + resizeDistance / 140, 0.4, 2.5);
@@ -758,8 +768,7 @@ function bindPlacementEditor() {
         avatar.style.setProperty("--x", `${player.positionX}%`);
         avatar.style.setProperty("--y", `${player.positionY}%`);
         avatar.style.setProperty("--size", player.displaySize);
-        avatar.style.setProperty("--name-x", `${player.nameOffsetX || 0}cqw`);
-        avatar.style.setProperty("--name-y", `${player.nameOffsetY || 0}cqh`);
+        positionAvatarName(avatar, player);
         avatar.style.setProperty("--layer", player.displayLayer);
       };
       const finish = () => {
