@@ -237,7 +237,7 @@ function toast(message) {
 }
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
-const tutorialRevision = "9";
+const tutorialRevision = "10";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
     ["input[name='name']", "Enter your display name. PNGCalls remembers it and the other setup choices on this device."],
@@ -252,7 +252,7 @@ function tutorialSteps() {
     ["#join-form button[type='submit']", "Join when everything looks right. PNGCalls keeps this player profile, including uploaded images, so it can be restored on a future invitation from this browser."],
   ];
   if (isJoin) return [
-    ["#guest-live-preview", "This is how you appear in the overlay. Speak to test the talking image, accent, name, and animation live."],
+    ["#guest-live-preview", "This uses the same character scale and name coordinates as the host preview and OBS. Host arrangement changes appear here live, and you can speak to test your talking image."],
     ["#guest-name-controls", "Fine tune your name here. Change its font, hide it if wanted, and use the sliders to move or resize it while watching the live preview."],
     ["#camera-output-preview", "This is the exact camera crop sent to the overlay."],
     ["#crop-controls", "Adjust zoom and position here. Changes are saved on this device."],
@@ -1097,6 +1097,10 @@ async function runJoin() {
     nameVisible: player.nameVisible !== false,
     nameBackground: player.nameBackground || previous.nameBackground || "solid",
     nameBackgroundColor: player.nameBackgroundColor || previous.nameBackgroundColor || "#090305",
+    displaySize: player.displaySize ?? previous.displaySize ?? 1,
+    positionX: player.positionX ?? null,
+    positionY: player.positionY ?? null,
+    customLayout: (player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined) || previous.customLayout === true,
     accent: player.accent || previous.accent || "#d0193c",
     speakingAnimation: player.speakingAnimation || previous.speakingAnimation || "none",
     mediaMode: player.mediaMode || previous.mediaMode || "png",
@@ -1292,6 +1296,10 @@ async function runJoin() {
           nameOffsetX: namePosition.x,
           nameOffsetY: namePosition.y,
           nameVisible: selectedNamePosition !== "hidden",
+          displaySize: joined.player?.displaySize ?? 1,
+          positionX: joined.player?.positionX ?? null,
+          positionY: joined.player?.positionY ?? null,
+          customLayout: false,
           accent: form.get("accent"),
           speakingAnimation,
           mediaMode,
@@ -1360,6 +1368,7 @@ async function startMic(id, joinToken, identity, storageKey) {
     nameBackground: identity.nameBackground || "solid",
     nameBackgroundColor: identity.nameBackgroundColor || "#090305",
     nameVisible: identity.nameVisible !== false,
+    displaySize: identity.displaySize ?? 1,
     speaking: false,
     localWebcamPreview: useWebcam,
   };
@@ -1368,7 +1377,7 @@ async function startMic(id, joinToken, identity, storageKey) {
     <div class="eyebrow">Connected as ${escapeHtml(identity.name)}</div>
     <h1>Keep this tab open</h1>
     <p class="join-copy">${useWebcam ? "Your camera frames go to this PNGCalls server while this tab stays open." : "You can minimize this window. Only your speaking status is sent to the overlay."}</p>
-    <section class="guest-preview-panel"><div class="guest-preview-heading"><strong>Your overlay preview</strong><span>Speak to test it</span></div><div id="guest-live-preview" class="preview">${avatarMarkup(previewPlayer)}</div></section>
+    <section class="guest-preview-panel"><div class="guest-preview-heading"><strong>Your overlay preview</strong><span>Speak to test it</span></div><div id="guest-live-preview" class="preview guest-relative-layout ${identity.customLayout ? "custom-layout" : ""}">${avatarMarkup(previewPlayer)}</div></section>
     <section id="guest-name-controls" class="crop-controls guest-name-controls">
       <div class="crop-heading"><strong>Adjust your name</strong><span id="guest-name-save-state" class="hint">Changes save to the overlay</span></div>
       <div class="field"><label for="guest-name-font">Font</label><select id="guest-name-font" class="input font-${normalizeNameFont(identity.nameFont)}">${nameFontOptions(normalizeNameFont(identity.nameFont))}</select></div>
@@ -1401,8 +1410,7 @@ async function startMic(id, joinToken, identity, storageKey) {
     previewAvatar.classList.remove(...nameFontValues.map((font) => `font-${font}`));
     previewAvatar.classList.add(`font-${identity.nameFont}`);
     previewAvatar.style.setProperty("--name-size", identity.nameSize);
-    previewAvatar.style.setProperty("--name-x", `${identity.nameOffsetX}cqw`);
-    previewAvatar.style.setProperty("--name-y", `${identity.nameOffsetY}cqh`);
+    positionAvatarName(previewAvatar, identity);
     previewAvatar.classList.toggle("name-hidden", !identity.nameVisible);
     guestNameFont.className = `input font-${identity.nameFont}`;
     document.querySelector("#guest-name-size-value").textContent = `${Math.round(identity.nameSize * 100)}%`;
@@ -1427,6 +1435,38 @@ async function startMic(id, joinToken, identity, storageKey) {
   });
   guestNameFont.onchange = saveGuestNameControls;
   guestNameVisibility.onchange = saveGuestNameControls;
+  const syncGuestPlayerState = (player, customLayout) => {
+    if (!player || player.id !== identity.playerId) return;
+    const localSettings = {
+      microphoneDeviceId: identity.microphoneDeviceId,
+      cameraDeviceId: identity.cameraDeviceId,
+      cameraFps: identity.cameraFps,
+      crop: identity.crop,
+    };
+    identity = {
+      ...identity,
+      ...player,
+      ...localSettings,
+      displaySize: player.displaySize ?? identity.displaySize ?? 1,
+      positionX: player.positionX ?? null,
+      positionY: player.positionY ?? null,
+      customLayout: Boolean(customLayout),
+    };
+    localStorage.setItem(storageKey, JSON.stringify(identity));
+    const guestPreview = document.querySelector("#guest-live-preview");
+    guestPreview.classList.toggle("custom-layout", identity.customLayout);
+    previewAvatar.style.setProperty("--size", clamp(identity.displaySize || 1, 0.4, 2.5));
+    applyPlayerState(previewAvatar, { ...identity, positionX: null, positionY: null }, false);
+    guestNameFont.value = normalizeNameFont(identity.nameFont);
+    guestNameVisibility.value = identity.nameVisible === false ? "hidden" : "visible";
+    guestNameSize.value = clamp(identity.nameSize ?? 1, 0.5, 3);
+    guestNameX.value = clamp(identity.nameOffsetX ?? 0, -100, 100);
+    guestNameY.value = clamp(identity.nameOffsetY ?? 8, -100, 100);
+    guestNameFont.className = `input font-${normalizeNameFont(identity.nameFont)}`;
+    document.querySelector("#guest-name-size-value").textContent = `${Math.round(identity.nameSize * 100)}%`;
+    document.querySelector("#guest-name-x-value").textContent = `${Math.round(identity.nameOffsetX)}`;
+    document.querySelector("#guest-name-y-value").textContent = `${Math.round(identity.nameOffsetY)}`;
+  };
   document.querySelector("#leave-room").onclick = async () => {
     leaving = true;
     presenceSocket?.close();
@@ -1462,6 +1502,12 @@ async function startMic(id, joinToken, identity, storageKey) {
     const activeSocket = new WebSocket(`${protocol}//${location.host}/ws/join/${encodeURIComponent(id)}/${encodeURIComponent(joinToken)}/${encodeURIComponent(identity.playerId)}`);
     presenceSocket = activeSocket;
     activeSocket.onopen = sendSpeakingState;
+    activeSocket.onmessage = (event) => {
+      try {
+        const message = JSON.parse(String(event.data));
+        if (message.type === "player") syncGuestPlayerState(message.player, message.customLayout);
+      } catch {}
+    };
     activeSocket.onclose = () => {
       if (leaving || presenceSocket !== activeSocket) return;
       presenceSocket = null;

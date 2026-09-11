@@ -261,6 +261,12 @@ async function broadcast(roomId) {
   for (const socket of overlayClients.get(roomId) || []) {
     if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < 256 * 1024) socket.send(serialized);
   }
+  const customLayout = payload.players.some((player) => player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined);
+  for (const socket of guestPresenceSockets.clients) {
+    if (socket.roomId !== roomId || socket.readyState !== WebSocket.OPEN || socket.bufferedAmount >= 256 * 1024) continue;
+    const player = payload.players.find((entry) => entry.id === socket.playerId);
+    if (player) socket.send(JSON.stringify({ type: "player", player, customLayout }));
+  }
 }
 
 function removeUploadedFile(url) {

@@ -245,6 +245,9 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .preview.arc .avatar.speaking, .overlay-stage.arc .avatar.speaking { transform: translateY(-5.25cqh); }
 .preview.custom-layout .avatar, .overlay-stage.custom-layout .avatar { width: 22cqw; height: 68cqh; max-width: 28cqw; }
 .preview.custom-layout .avatar.webcam, .overlay-stage.custom-layout .avatar.webcam { width: 28cqw; height: auto; }
+.preview.guest-relative-layout { display: flex; justify-content: center; align-items: end; }
+.preview.guest-relative-layout.custom-layout .avatar { position: relative; left: auto; top: auto; margin: 0; transform: none; }
+.preview.guest-relative-layout.custom-layout .avatar.speaking { transform: translateY(-2.25cqh); }
 .preview.custom-layout.arc .avatar:nth-child(odd), .overlay-stage.custom-layout.arc .avatar:nth-child(odd) { transform: translate(-50%, -50%); }
 .preview.custom-layout.arc .avatar.speaking:nth-child(odd), .overlay-stage.custom-layout.arc .avatar.speaking:nth-child(odd) { transform: translate(-50%, calc(-50% - 2.25cqh)); }
 

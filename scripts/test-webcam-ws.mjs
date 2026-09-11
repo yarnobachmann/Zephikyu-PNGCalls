@@ -228,6 +228,17 @@ try {
   assert.equal(guestStyledOverlayPlayer.nameOffsetX, 7);
   assert.equal(guestStyledOverlayPlayer.nameOffsetY, -24);
 
+  const guestPlacementUpdate = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Guest preview socket missed the host arrangement update")), 5_000);
+    const onMessage = (message) => {
+      const payload = JSON.parse(String(message));
+      if (payload.type !== "player" || payload.player?.positionX !== 21) return;
+      clearTimeout(timeout);
+      guestPresence.off("message", onMessage);
+      resolve(payload);
+    };
+    guestPresence.on("message", onMessage);
+  });
   const placementResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/placements`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
@@ -245,6 +256,11 @@ try {
   assert.equal(placedPlayer.nameOffsetY, 12);
   assert.equal(placedPlayer.nameVisible, false);
   assert.equal(placedPlayer.idleTransparent, false);
+  const guestPlacement = await guestPlacementUpdate;
+  assert.equal(guestPlacement.customLayout, true);
+  assert.equal(guestPlacement.player.displaySize, 1.4);
+  assert.equal(guestPlacement.player.nameOffsetX, -8);
+  assert.equal(guestPlacement.player.nameOffsetY, 12);
   const placedOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
   const placedOverlayPlayer = placedOverlay.players.find((player) => player.id === participant.playerId);
   assert.equal(placedOverlayPlayer.positionX, 21);

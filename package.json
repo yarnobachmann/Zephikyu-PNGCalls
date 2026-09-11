@@ -1,6 +1,6 @@
 {
   "name": "zephikyu-pngcalls",
-  "version": "1.2.18",
+  "version": "1.2.19",
   "private": true,
   "type": "module",
   "description": "Zephikyu branded, self-hosted PNG and webcam calls for OBS.",
