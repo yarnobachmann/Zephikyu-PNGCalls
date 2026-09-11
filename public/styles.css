@@ -59,15 +59,15 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 
 .preview { width: 100%; min-height: 0; aspect-ratio: 16 / 9; border: 2px solid #090708; border-radius: 18px 25px 16px 22px; background-color: #120d0f; background-image: linear-gradient(45deg,#21181b 25%,transparent 25%),linear-gradient(-45deg,#21181b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#21181b 75%),linear-gradient(-45deg,transparent 75%,#21181b 75%); background-size: 24px 24px; background-position: 0 0,0 12px,12px -12px,-12px 0; overflow: hidden; }
 .avatar { min-width: 150px; max-width: 240px; flex: 1; position: relative; display: grid; justify-items: center; align-content: end; transition: transform .14s ease, filter .14s ease, opacity .14s ease; filter: saturate(.78) brightness(.72); opacity: .82; }
-.avatar.speaking { transform: translateY(-8px); filter: none; opacity: 1; }
+.avatar.speaking { transform: translateY(-2.25cqh); filter: none; opacity: 1; }
 .avatar-visual { width: 100%; height: 100%; display: grid; justify-items: center; align-items: end; transform: scale(var(--size, 1)); transform-origin: center bottom; }
 .avatar-img { width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; object-position: bottom; filter: drop-shadow(3px 5px 0 #0008); }
 .avatar.webcam { max-width: 360px; align-content: end; }
 .webcam-img { width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; object-position: center; border-radius: 18px; border: 3px solid var(--accent, var(--acid)); background: #050203; filter: none; }
 .avatar-fallback { width: 150px; height: 190px; display: grid; place-items: center; border-radius: 999px 999px 24px 24px; background: #2a151c; border: 2px dashed #723143; color: var(--muted); }
-.avatar-name { position: absolute; left: 50%; bottom: 2px; z-index: 12; max-width: 90cqw; background: var(--name-bg, #090305); border: 1px solid var(--line); padding: 7px 11px; border-radius: 99px; font-size: .8rem; white-space: nowrap; transform: translate(calc(-50% + var(--name-x, 0cqw)), var(--name-y, 0cqh)) scale(var(--name-size, 1)); transform-origin: center; }
+.avatar-name { position: absolute; left: 50%; bottom: .55cqh; z-index: 12; max-width: 90cqw; background: var(--name-bg, #090305); border: max(1px, .22cqh) solid var(--line); padding: 1.95cqh 1.7cqw; border-radius: 10cqh; font-size: 3.55cqh; line-height: 1.15; white-space: nowrap; transform: translate(calc(-50% + var(--name-x, 0cqw)), var(--name-y, 0cqh)) scale(var(--name-size, 1)); transform-origin: center; }
 .avatar-name.no-background { background: transparent; border-color: transparent; }
-.avatar.webcam .avatar-name { bottom: -38px; padding: 6px 12px; }
+.avatar.webcam .avatar-name { bottom: -10.7cqh; padding: 1.7cqh 1.85cqw; }
 .avatar.speaking .avatar-name { border-color: var(--accent, var(--acid)); }
 .avatar.speaking .avatar-name.no-background { border-color: transparent; }
 .font-rounded, .font-rounded .avatar-name { font-family: "Trebuchet MS", "Arial Rounded MT Bold", sans-serif; }
@@ -99,7 +99,7 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .preview.placement-editing .avatar-resize { position: absolute; right: -18px; bottom: -18px; z-index: 20; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 3px solid #090708; border-radius: 50%; background: #d0193c; color: white; cursor: nwse-resize; font-size: 1.2rem; font-weight: 900; box-shadow: 3px 3px 0 #090708; }
 .preview.custom-layout, .overlay-stage.custom-layout { position: relative; display: block; }
 .preview.custom-layout .avatar, .overlay-stage.custom-layout .avatar { position: absolute; left: var(--x, 50%); top: var(--y, 50%); z-index: var(--layer, 0); margin: 0; transform: translate(-50%, -50%); transform-origin: center; }
-.preview.custom-layout .avatar.speaking, .overlay-stage.custom-layout .avatar.speaking { transform: translate(-50%, calc(-50% - 8px)); }
+.preview.custom-layout .avatar.speaking, .overlay-stage.custom-layout .avatar.speaking { transform: translate(-50%, calc(-50% - 2.25cqh)); }
 
 .player-list { display: grid; gap: 10px; }
 .player-row { border: 2px solid #090708; border-radius: 16px 11px 16px 11px; padding: 13px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; background: #1c1518; transition: transform .16s ease, background .16s ease; }
@@ -156,7 +156,7 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .avatar.speaking.animation-pulse .avatar-img, .avatar.speaking.animation-pulse .avatar-fallback { animation: speaking-pulse .7s ease-in-out infinite alternate; }
 .avatar.speaking.animation-shake .avatar-img, .avatar.speaking.animation-shake .avatar-fallback { animation: speaking-shake .16s linear infinite; }
 .avatar.speaking.animation-glow .avatar-img, .avatar.speaking.animation-glow .avatar-fallback { animation: speaking-glow .75s ease-in-out infinite alternate; }
-@keyframes speaking-bounce { from { transform: translateY(0); } to { transform: translateY(-18px); } }
+@keyframes speaking-bounce { from { transform: translateY(0); } to { transform: translateY(-5.05cqh); } }
 @keyframes speaking-pulse { from { transform: scale(1); } to { transform: scale(1.055); } }
 @keyframes speaking-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-1.5deg); } 75% { transform: rotate(1.5deg); } }
 @keyframes speaking-glow { from { filter: drop-shadow(0 18px 28px #0008); } to { filter: drop-shadow(0 0 24px var(--accent)); } }
@@ -200,21 +200,23 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 @keyframes shelf-playing { from { transform: rotate(-3deg) scale(1.04); } to { transform: rotate(3deg) scale(1.1); } }
 
 .overlay-page { width: 100vw; height: 100vh; overflow: hidden; background: transparent; }
-.overlay-stage { width: 100vw; height: 100vh; box-sizing: border-box; overflow: hidden; }
+.overlay-page { width: 100vw; height: 100vh; min-width: 0; overflow: hidden; background: transparent; background-image: none; }
+.overlay-page #app { width: 100%; height: 100%; display: grid; place-items: center; }
+.overlay-stage { width: min(100vw, 177.7778vh); height: min(100vh, 56.25vw); box-sizing: border-box; overflow: hidden; }
 .preview, .overlay-stage { container-type: size; display: flex; justify-content: center; align-items: end; gap: 2cqw; padding: 2cqh 2cqw; }
 .preview.custom-layout, .overlay-stage.custom-layout { display: block; }
 .preview .avatar, .overlay-stage .avatar { flex: 0 1 22cqw; width: 22cqw; min-width: 0; max-width: 28cqw; height: 94cqh; }
 .preview .avatar-img, .overlay-stage .avatar-img { max-height: 100%; }
 .preview .avatar-fallback, .overlay-stage .avatar-fallback { width: 20cqw; height: 70cqh; }
 .preview .avatar.webcam, .overlay-stage .avatar.webcam { width: 28cqw; height: auto; }
-.preview .avatar.webcam .webcam-img, .overlay-stage .avatar.webcam .webcam-img { height: auto; max-height: calc(94cqh - 48px); }
+.preview .avatar.webcam .webcam-img, .overlay-stage .avatar.webcam .webcam-img { height: auto; max-height: 80.5cqh; }
 .preview.stack, .overlay-stage.stack { flex-direction: column; align-items: start; justify-content: end; }
 .preview.arc .avatar:nth-child(odd), .overlay-stage.arc .avatar:nth-child(odd) { transform: translateY(-3cqh); }
-.preview.arc .avatar.speaking, .overlay-stage.arc .avatar.speaking { transform: translateY(calc(-3cqh - 8px)); }
+.preview.arc .avatar.speaking, .overlay-stage.arc .avatar.speaking { transform: translateY(-5.25cqh); }
 .preview.custom-layout .avatar, .overlay-stage.custom-layout .avatar { width: 22cqw; height: 68cqh; max-width: 28cqw; }
 .preview.custom-layout .avatar.webcam, .overlay-stage.custom-layout .avatar.webcam { width: 28cqw; height: auto; }
 .preview.custom-layout.arc .avatar:nth-child(odd), .overlay-stage.custom-layout.arc .avatar:nth-child(odd) { transform: translate(-50%, -50%); }
-.preview.custom-layout.arc .avatar.speaking:nth-child(odd), .overlay-stage.custom-layout.arc .avatar.speaking:nth-child(odd) { transform: translate(-50%, calc(-50% - 8px)); }
+.preview.custom-layout.arc .avatar.speaking:nth-child(odd), .overlay-stage.custom-layout.arc .avatar.speaking:nth-child(odd) { transform: translate(-50%, calc(-50% - 2.25cqh)); }
 
 .toast { position: fixed; right: 24px; bottom: 24px; background: var(--ink); color: #10120e; padding: 11px 15px; border-radius: 10px; font-weight: 700; box-shadow: 0 15px 50px #0008; z-index: 20; }
 .modal { position: fixed; inset: 0; background: #000b; display: grid; place-items: center; padding: 20px; z-index: 30; }

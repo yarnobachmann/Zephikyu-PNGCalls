@@ -178,6 +178,7 @@ async function api(url, options = {}) {
   const securityHeaders = csrfToken && !["GET", "HEAD", "OPTIONS"].includes(method) ? { "X-CSRF-Token": csrfToken } : {};
   const response = await fetch(url, {
     ...options,
+    cache: options.cache || (method === "GET" ? "no-store" : undefined),
     headers: { ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }), ...securityHeaders, ...options.headers },
   });
   if (!response.ok) {
