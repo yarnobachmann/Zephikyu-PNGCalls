@@ -135,7 +135,7 @@ If the default camera is already being used by another application, PNGCalls sti
 
 On the first visit, Zeph asks whether the user wants a guided tour. The tour highlights the important controls for the current host or player screen. Choosing no, closing the tour, or finishing it keeps Zeph available in the lower-right corner with a help button. Tutorial completion is stored only in that browser.
 
-## Discord direct-call companion
+## Discord Activity call connector
 
 Create an application in the Discord Developer Portal and add this redirect URL:
 
@@ -143,9 +143,23 @@ Create an application in the Discord Developer Portal and add this redirect URL:
 https://your-pngcalls-domain.example/auth/discord/callback
 ```
 
-Open the host Settings page and copy the displayed redirect URL into the Discord application's OAuth2 Redirects list. Enter the application's client ID and client secret in PNGCalls, save the configuration, and select Connect Discord account. PNGCalls requests `identify`, `rpc`, and `rpc.voice.read` so the Windows companion can read direct calls, group calls, and server voice channels from Discord Desktop.
+Open the host Settings page and copy the displayed redirect URL into the Discord application's OAuth2 Redirects list. Add `https://127.0.0.1` as a second placeholder redirect for the Embedded App SDK. Enter the application's client ID and client secret in PNGCalls, save the configuration, and select Connect Discord account. The website connection requests only `identify`. The restricted `rpc.voice.read` permission is requested inside Discord when the Activity starts.
 
-Discord limits RPC scopes to approved partners and configured application testers. Add the host Discord account as an application tester during development. Public use requires Discord approval. This restriction belongs to Discord and cannot be bypassed by PNGCalls.
+In the Discord Developer Portal:
+
+1. Under Installation, enable both User Install and Guild Install so the Activity can launch in servers, DMs, and Group DMs.
+2. Under Activities, enable Activities and select the supported desktop platform.
+3. Add the URL mapping `/` to `pngcalls.yarnobachmann.nl`.
+4. Add the host Discord account as an application tester while the app is in development.
+5. Request Discord approval for `rpc.voice.read` before distributing the Activity publicly.
+
+Start or join a Discord call, open the App Launcher in that call, and launch PNGCalls. The Activity automatically authenticates the linked host Discord account and reconnects to the last selected PNGCalls room. Keep the small Activity open during the call. It forwards `SPEAKING_START`, `SPEAKING_STOP`, and voice-state changes to the existing browser overlay over WebSockets. It never transmits call audio.
+
+Discord limits `rpc.voice.read` to approved applications and configured application testers. This restriction belongs to Discord and cannot be bypassed by PNGCalls. The Activity can run in direct messages, group DMs, and server channels, but it cannot continue reading a call after the Activity is closed.
+
+References: [Discord Activities](https://docs.discord.com/developers/platform/activities), [Building an Activity](https://docs.discord.com/developers/activities/building-an-activity), and [Embedded App SDK events](https://docs.discord.com/developers/developer-tools/embedded-app-sdk#sdk-events).
+
+### Windows companion fallback
 
 After Discord is connected:
 
@@ -157,9 +171,9 @@ After Discord is connected:
 
 Run `PNGCalls-Companion.exe --configure` to replace its saved server or pairing code. Pairing tokens are stored as hashes on the server and can be revoked from Settings. Discord client secrets and OAuth tokens are encrypted before storage in SQLite. Back up the `.credentials-key` file alongside the database because saved secrets cannot be decrypted without it.
 
-The companion uses Discord's local IPC interface. It sends the active call's participant names, mute state, and speaking state to the paired PNGCalls room. It does not transmit Discord audio. Invite links and browser microphone detection remain available without Discord.
+The companion uses Discord's local IPC interface. It sends the active call's participant names, mute state, and speaking state to the paired PNGCalls room. It does not transmit Discord audio. Use it only as a fallback while Activity access is unavailable. Invite links and browser microphone detection remain available without Discord.
 
-Discord's browser RPC transport is deprecated and only available to applications that participated in its old private beta. A newly created self-hosted Discord application therefore cannot copy Reactive's browser-only connection. OAuth grants the requested account permissions, but it does not grant access to that deprecated browser transport. The native IPC companion is the supported route for existing Discord direct and group calls.
+Discord's old browser RPC transport is deprecated and unavailable to new applications. The Discord Activity is different: it runs inside Discord and uses the supported Embedded App SDK bridge, so its voice events work without a local executable.
 
 Environment variables named `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, and `DISCORD_REDIRECT_URI` remain supported as a fallback. A configuration saved in Settings takes priority.
 

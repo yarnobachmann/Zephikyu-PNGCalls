@@ -11,7 +11,7 @@ const port = 4192;
 const baseUrl = `http://127.0.0.1:${port}`;
 const socketUrl = `ws://127.0.0.1:${port}`;
 const testRoot = mkdtempSync(path.join(os.tmpdir(), "pngcalls-webcam-test-"));
-const env = { ...process.env, PORT: String(port), HOST: "127.0.0.1", DATA_DIR: path.join(testRoot, "data"), UPLOAD_DIR: path.join(testRoot, "uploads"), NODE_ENV: "test", DISCORD_CLIENT_ID: "", DISCORD_CLIENT_SECRET: "", DISCORD_REDIRECT_URI: "", DISCORD_TEST_ACCESS_TOKEN: "test-rpc-access-token" };
+const env = { ...process.env, PORT: String(port), HOST: "127.0.0.1", DATA_DIR: path.join(testRoot, "data"), UPLOAD_DIR: path.join(testRoot, "uploads"), NODE_ENV: "test", DISCORD_CLIENT_ID: "", DISCORD_CLIENT_SECRET: "", DISCORD_REDIRECT_URI: "", DISCORD_TEST_ACCESS_TOKEN: "test-rpc-access-token", DISCORD_TEST_USER_ID: "111122223333444455" };
 
 const initialized = spawnSync(process.execPath, ["scripts/init-db.mjs"], { env, stdio: "inherit" });
 assert.equal(initialized.status, 0, "Database initialization failed");
@@ -38,6 +38,7 @@ const openSocket = (url, cookie = "") => new Promise((resolve, reject) => {
 let publisher;
 let viewer;
 let companion;
+let activity;
 try {
   await waitForServer;
   const setupResponse = await fetch(`${baseUrl}/api/auth/setup`, {
@@ -65,7 +66,14 @@ try {
   assert.equal(discordStatus.configured, true);
   assert.equal(discordStatus.clientId, "123456789012345678");
   assert.equal(discordStatus.source, "settings");
+  assert.equal(discordStatus.activityUrl, "https://discord.com/activities/123456789012345678");
   assert.equal(JSON.stringify(discordStatus).includes(discordSecret), false);
+  const activityConfig = await fetch(`${baseUrl}/api/discord/activity/config`).then((response) => response.json());
+  assert.deepEqual(activityConfig, { enabled: true, clientId: "123456789012345678" });
+  const activityPage = await fetch(`${baseUrl}/?frame_id=test-frame&instance_id=test-instance&platform=desktop`);
+  assert.equal(activityPage.status, 200);
+  assert.match(activityPage.headers.get("content-security-policy"), /frame-ancestors https:\/\/discord\.com/);
+  assert.match(await activityPage.text(), /Discord Call Connector/i);
   assert.equal(existsSync(path.join(testRoot, "data", ".credentials-key")), true);
   const oauthStart = await fetch(`${baseUrl}/auth/discord`, { headers: { Cookie: hostCookies }, redirect: "manual" });
   assert.equal(oauthStart.status, 302);
@@ -131,6 +139,23 @@ try {
   assert.equal(discordPlayer.name, "Discord friend");
   assert.equal(discordPlayer.speaking, true);
   assert.equal(companionOverlay.companion.channelName, "Direct call");
+
+  const activityTokenResponse = await fetch(`${baseUrl}/api/discord/activity/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "test-activity-code" }),
+  });
+  assert.equal(activityTokenResponse.status, 200);
+  const activityCredentials = await activityTokenResponse.json();
+  assert.equal(activityCredentials.access_token, "test-activity-access-token");
+  assert.equal(activityCredentials.rooms.some((entry) => entry.id === room.sessionId), true);
+  activity = await openSocket(`${socketUrl}/ws/activity/${room.sessionId}/${activityCredentials.bridge_token}`);
+  activity.send(JSON.stringify({ type: "snapshot", channel: { id: "777788889999000011", name: "Activity direct call" }, users: [{ id: "222233334444555566", name: "Discord friend", speaking: false, muted: false }] }));
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const activityOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
+  assert.equal(activityOverlay.players.find((player) => player.source === "discord").speaking, false);
+  assert.equal(activityOverlay.companion.channelName, "Activity direct call");
+  assert.equal(activityOverlay.companion.mode, "activity");
 
   const joinResponse = await fetch(`${baseUrl}/api/join/${room.sessionId}/${room.joinToken}`, {
     method: "POST",
@@ -216,6 +241,7 @@ try {
   publisher?.terminate();
   viewer?.terminate();
   companion?.terminate();
+  activity?.terminate();
   server.kill("SIGTERM");
   await Promise.race([once(server, "exit"), new Promise((resolve) => setTimeout(resolve, 5_000))]);
   rmSync(testRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

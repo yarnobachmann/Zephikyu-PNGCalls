@@ -1,6 +1,6 @@
 {
   "name": "zephikyu-pngcalls",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Zephikyu branded, self-hosted PNG and webcam calls for OBS.",
@@ -10,15 +10,18 @@
     "db:init": "node --no-warnings scripts/init-db.mjs",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "check": "node --check server.mjs && node --check public/app.js && node --check companion/pngcalls-companion.cjs && node --check scripts/init-db.mjs && node --check scripts/test-webcam-ws.mjs && node --check scripts/build-companion.mjs && prisma validate",
+    "check": "node --check server.mjs && node --check public/app.js && node --check activity/activity.js && node --check companion/pngcalls-companion.cjs && node --check scripts/init-db.mjs && node --check scripts/test-webcam-ws.mjs && node --check scripts/build-companion.mjs && node --check scripts/build-activity.mjs && prisma validate",
     "test:webcam": "node scripts/test-webcam-ws.mjs",
-    "build:companion": "node scripts/build-companion.mjs"
+    "build:companion": "node scripts/build-companion.mjs",
+    "build:activity": "node scripts/build-activity.mjs"
   },
   "engines": {
     "node": ">=22.5"
   },
   "dependencies": {
+    "@discord/embedded-app-sdk": "^2.5.0",
     "@prisma/client": "^6.12.0",
+    "esbuild": "^0.28.2",
     "express": "^5.1.0",
     "express-rate-limit": "^8.7.0",
     "file-type": "^22.0.2",

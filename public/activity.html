@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#171113" />
+    <title>PNGCalls Discord Connector</title>
+    <link rel="icon" href="/assets/zeph.gif" type="image/gif" />
+    <link rel="stylesheet" href="/activity.css?v=1" />
+  </head>
+  <body>
+    <main class="activity-card">
+      <img class="mascot" src="/assets/zeph.gif" alt="Zephikyu" />
+      <p class="eyebrow">DISCORD CALL CONNECTOR</p>
+      <h1 id="activity-status">Opening PNGCalls</h1>
+      <p id="activity-detail">Asking Discord for call access...</p>
+      <section id="room-panel" hidden>
+        <label for="activity-room">Send this call to</label>
+        <div class="room-controls">
+          <select id="activity-room"></select>
+          <button id="activity-connect" type="button">Connect</button>
+        </div>
+      </section>
+      <ul id="activity-people" aria-label="Detected Discord users"></ul>
+      <p class="footnote">This connector sends speaking on and off events only. It never sends call audio.</p>
+    </main>
+    <script type="module" src="/activity.js?v=1"></script>
+  </body>
+</html>
+

@@ -25,6 +25,8 @@ const app = express();
 const clients = new Map();
 const discordStates = new Map();
 const discordCompanions = new Map();
+const discordActivities = new Map();
+const discordActivitySessions = new Map();
 const discordOAuthCookie = "zephikyu_discord_oauth";
 const auditSalt = crypto.randomBytes(32);
 const allowedImages = new Map([["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/gif", "gif"]]);
@@ -102,6 +104,8 @@ const companionDownloadUrl = "/downloads/windows-companion";
 const companionReleaseUrl = "https://github.com/yarnobachmann/Zephikyu-PNGCalls/releases/latest/download/PNGCalls-Companion.exe";
 const closeDiscordCompanions = (reason) => {
   for (const socket of discordCompanions.values()) socket.close(4001, reason);
+  for (const socket of discordActivities.values()) socket.close(4001, reason);
+  discordActivitySessions.clear();
 };
 
 async function discordAccessToken() {
@@ -209,6 +213,7 @@ function publicRoom(room) {
       channelId: room.discordChannelId || null,
       channelName: room.discordChannelName || null,
       downloadUrl: companionDownloadUrl,
+      mode: discordActivities.has(room.id) ? "activity" : discordCompanions.has(room.id) ? "companion" : null,
     },
     players: room.players.filter((player) => activeIds.has(player.id) || (player.pinned && player.presence?.source !== "browser")).map((player) => ({
       id: player.id, name: player.name, idleImage: player.idleImage, talkingImage: player.talkingImage || player.idleImage, accent: player.accent,
@@ -300,9 +305,21 @@ const authLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeade
 const joinLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
 const heartbeatLimit = rateLimit({ windowMs: 60 * 1000, limit: 180, standardHeaders: "draft-8", legacyHeaders: false });
 const webcamLimit = rateLimit({ windowMs: 60 * 1000, limit: 1200, standardHeaders: "draft-8", legacyHeaders: false });
+const activityAuthLimit = rateLimit({ windowMs: 60 * 1000, limit: 12, standardHeaders: "draft-8", legacyHeaders: false });
 
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
+app.get("/", (req, res, next) => {
+  const embedded = typeof req.query.frame_id === "string" && typeof req.query.instance_id === "string";
+  if (!embedded) return next();
+  res.set({
+    "Cache-Control": "no-store",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'none'; frame-ancestors https://discord.com https://*.discord.com",
+    "Cross-Origin-Resource-Policy": "cross-origin",
+    "X-Content-Type-Options": "nosniff",
+  });
+  res.sendFile(path.resolve("public/activity.html"));
+});
 app.use(helmet({ contentSecurityPolicy: { directives: {
   defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:"],
   connectSrc: ["'self'"], objectSrc: ["'none'"], baseUri: ["'none'"], frameAncestors: ["'none'"], upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null,
@@ -366,9 +383,50 @@ app.get("/api/discord/status", requireHost, async (_req, res) => {
     clientId: config?.clientId || "",
     source: config?.source || null,
     callbackUrl: discordCallbackUrl(),
-    connected: connection ? { username: connection.username, connectedAt: connection.connectedAt, rpcReady: connection.scopes.split(" ").includes("rpc") } : null,
+    connected: connection ? { username: connection.username, connectedAt: connection.connectedAt, rpcReady: connection.scopes.split(" ").includes("rpc.voice.read") } : null,
+    activityUrl: config?.clientId ? `https://discord.com/activities/${config.clientId}` : null,
     companionDownloadUrl,
   });
+});
+
+app.get("/api/discord/activity/config", async (_req, res) => {
+  const config = await discordOAuthConfig().catch(() => null);
+  res.json({ enabled: Boolean(config), clientId: config?.clientId || "" });
+});
+
+app.post("/api/discord/activity/token", activityAuthLimit, async (req, res) => {
+  for (const [key, session] of discordActivitySessions) if (session.expiresAt <= Date.now()) discordActivitySessions.delete(key);
+  const code = String(req.body?.code || "");
+  if (!code || code.length > 500) return res.status(400).json({ error: "Discord did not provide a valid Activity code." });
+  const config = await discordOAuthConfig().catch(() => null);
+  const linked = await prisma.discordConnection.findUnique({ where: { id: 1 } });
+  if (!config || !linked) return res.status(409).json({ error: "Connect the host Discord account in PNGCalls Settings first." });
+  let credentials;
+  let user;
+  if (process.env.NODE_ENV === "test" && code === "test-activity-code" && process.env.DISCORD_TEST_USER_ID) {
+    credentials = { access_token: "test-activity-access-token", scope: "identify guilds rpc.voice.read" };
+    user = { id: process.env.DISCORD_TEST_USER_ID, username: "Activity host", global_name: "Activity host" };
+  } else {
+    const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: config.clientId, client_secret: config.clientSecret, grant_type: "authorization_code", code }),
+    });
+    if (!tokenResponse.ok) return res.status(502).json({ error: "Discord rejected the Activity connection." });
+    credentials = await tokenResponse.json();
+  }
+  const scopes = String(credentials.scope || "").split(" ");
+  if (!credentials.access_token || !scopes.includes("rpc.voice.read")) return res.status(403).json({ error: "Discord did not grant call speaking access. The application needs rpc.voice.read approval." });
+  if (!user) {
+    const userResponse = await fetch("https://discord.com/api/users/@me", { headers: { Authorization: `Bearer ${credentials.access_token}` } });
+    if (!userResponse.ok) return res.status(502).json({ error: "Discord profile lookup failed." });
+    user = await userResponse.json();
+  }
+  if (!safeEqual(String(user.id), linked.discordUserId)) return res.status(403).json({ error: `Open this Activity as the Discord account linked to PNGCalls (${linked.username}).` });
+  const bridgeToken = token(32);
+  discordActivitySessions.set(hash(bridgeToken), { userId: String(user.id), expiresAt: Date.now() + 12 * 60 * 60 * 1000 });
+  const rooms = await prisma.room.findMany({ orderBy: { updatedAt: "desc" }, select: { id: true, name: true } });
+  res.json({ access_token: credentials.access_token, bridge_token: bridgeToken, rooms, user: { id: String(user.id), name: cleanText(user.global_name || user.username, "Discord user", 80) } });
 });
 
 app.post("/api/discord/config", requireHost, requireCsrf, async (req, res) => {
@@ -396,7 +454,7 @@ app.delete("/api/discord/config", requireHost, requireCsrf, async (req, res) => 
   res.status(204).end();
 });
 
-app.get("/auth/discord", requireHost, async (req, res) => {
+app.get(["/auth/discord", "/auth/discord/companion"], requireHost, async (req, res) => {
   const config = await discordOAuthConfig().catch(() => null);
   if (!config) return res.status(503).send("Discord OAuth is not configured on this server.");
   const state = token(32);
@@ -404,7 +462,8 @@ app.get("/auth/discord", requireHost, async (req, res) => {
   discordStates.set(hash(state), { hostSessionId: req.hostContext.authSession.id, expiresAt: Date.now() + 10 * 60 * 1000, config, callback });
   setCookie(res, discordOAuthCookie, state, 10 * 60, cookieSecure(req), true, "Lax");
   const authorize = new URL("https://discord.com/oauth2/authorize");
-  authorize.search = new URLSearchParams({ client_id: config.clientId, response_type: "code", redirect_uri: callback, scope: "identify rpc rpc.voice.read", state, prompt: "consent" }).toString();
+  const scopes = req.path.endsWith("/companion") ? "identify rpc rpc.voice.read" : "identify";
+  authorize.search = new URLSearchParams({ client_id: config.clientId, response_type: "code", redirect_uri: callback, scope: scopes, state, prompt: "consent" }).toString();
   res.redirect(authorize.toString());
 });
 
@@ -698,6 +757,7 @@ await importLegacyState();
 const server = app.listen(port, host, () => console.log(`Zephikyu PNGCalls is ready at http://${host}:${port}`));
 const webcamSockets = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 });
 const discordCompanionSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+const discordActivitySockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const webcamViewers = new Map();
 const webcamPublishers = new Map();
 const webcamKey = (roomId, playerId) => `${roomId}:${playerId}`;
@@ -775,6 +835,8 @@ discordCompanionSockets.on("connection", (socket) => {
         roomId = room.id;
         authorized = true;
         discordCompanions.get(roomId)?.close(4001, "Companion replaced");
+        const previousActivity = discordActivities.get(roomId);
+        if (previousActivity) { discordActivities.delete(roomId); previousActivity.close(4001, "Windows companion connected"); }
         discordCompanions.set(roomId, socket);
         const config = await discordOAuthConfig();
         const accessToken = await discordAccessToken();
@@ -800,11 +862,46 @@ discordCompanionSockets.on("connection", (socket) => {
   });
 });
 
+discordActivitySockets.on("connection", (socket, context) => {
+  const roomId = context.roomId;
+  discordActivities.get(roomId)?.close(4001, "Activity replaced");
+  const previousCompanion = discordCompanions.get(roomId);
+  if (previousCompanion) { discordCompanions.delete(roomId); previousCompanion.close(4001, "Discord Activity connected"); }
+  discordActivities.set(roomId, socket);
+  prisma.room.update({ where: { id: roomId }, data: { companionLastSeen: new Date() } }).then(() => broadcast(roomId)).catch(() => {});
+  socket.on("message", async (message, isBinary) => {
+    try {
+      if (isBinary) return socket.close(4003, "Text messages required");
+      const payload = JSON.parse(String(message));
+      if (payload?.type === "snapshot") await syncDiscordSnapshot(roomId, payload);
+      if (payload?.type === "heartbeat") await prisma.room.update({ where: { id: roomId }, data: { companionLastSeen: new Date() } });
+    } catch (error) {
+      console.error("Discord Activity message failed", error);
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "error", message: cleanText(error.message, "Activity update failed", 200) }));
+    }
+  });
+  socket.on("close", async () => {
+    if (discordActivities.get(roomId) !== socket) return;
+    discordActivities.delete(roomId);
+    await prisma.room.update({ where: { id: roomId }, data: { companionLastSeen: null } }).catch(() => {});
+    await prisma.presence.updateMany({ where: { player: { roomId }, source: "discord" }, data: { present: false, speaking: false, lastSeen: new Date() } }).catch(() => {});
+    await broadcast(roomId).catch(() => {});
+  });
+});
+
 server.on("upgrade", async (request, socket, head) => {
   try {
     const parts = new URL(request.url, "http://localhost").pathname.split("/").filter(Boolean).map(decodeURIComponent);
     if (parts.length === 2 && parts[0] === "ws" && parts[1] === "discord") {
       return discordCompanionSockets.handleUpgrade(request, socket, head, (client) => discordCompanionSockets.emit("connection", client));
+    }
+    if (parts.length === 4 && parts[0] === "ws" && parts[1] === "activity") {
+      const roomId = cleanId(parts[2], "");
+      const activitySession = discordActivitySessions.get(hash(parts[3]));
+      const room = roomId ? await prisma.room.findUnique({ where: { id: roomId } }) : null;
+      const linked = await prisma.discordConnection.findUnique({ where: { id: 1 }, select: { discordUserId: true } });
+      if (!room || !activitySession || activitySession.expiresAt <= Date.now() || !linked || !safeEqual(activitySession.userId, linked.discordUserId)) return socket.destroy();
+      return discordActivitySockets.handleUpgrade(request, socket, head, (client) => discordActivitySockets.emit("connection", client, { roomId }));
     }
     if (parts.length !== 5 || parts[0] !== "ws" || !["publish", "view"].includes(parts[1])) return socket.destroy();
     const [, role, roomId, roomToken, playerId] = parts;
@@ -821,5 +918,5 @@ server.on("upgrade", async (request, socket, head) => {
   } catch { socket.destroy(); }
 });
 
-async function shutdown() { webcamSockets.close(); discordCompanionSockets.close(); server.close(async () => { await prisma.$disconnect(); process.exit(0); }); }
+async function shutdown() { webcamSockets.close(); discordCompanionSockets.close(); discordActivitySockets.close(); server.close(async () => { await prisma.$disconnect(); process.exit(0); }); }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
