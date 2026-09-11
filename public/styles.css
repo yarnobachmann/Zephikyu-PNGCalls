@@ -61,7 +61,7 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .avatar { min-width: 150px; max-width: 240px; flex: 1; position: relative; display: grid; justify-items: center; align-content: end; transition: transform .14s ease, filter .14s ease, opacity .14s ease; filter: saturate(.78) brightness(.72); opacity: .82; }
 .avatar.speaking { transform: translateY(-8px); filter: none; opacity: 1; }
 .avatar-visual { width: 100%; height: 100%; display: grid; justify-items: center; align-items: end; transform: scale(var(--size, 1)); transform-origin: center bottom; }
-.avatar-img { width: 100%; height: 250px; object-fit: contain; object-position: bottom; filter: drop-shadow(3px 5px 0 #0008); }
+.avatar-img { width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; object-position: bottom; filter: drop-shadow(3px 5px 0 #0008); }
 .avatar.webcam { max-width: 360px; align-content: end; }
 .webcam-img { width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; object-position: center; border-radius: 18px; border: 3px solid var(--accent, var(--acid)); background: #050203; filter: none; }
 .avatar-fallback { width: 150px; height: 190px; display: grid; place-items: center; border-radius: 999px 999px 24px 24px; background: #2a151c; border: 2px dashed #723143; color: var(--muted); }
@@ -89,7 +89,9 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .preview.placement-editing { outline: 2px dashed #d0193c; outline-offset: 4px; }
 .preview.placement-editing .avatar { cursor: grab; touch-action: none; user-select: none; }
 .preview.placement-editing .avatar-name { cursor: move; outline: 1px dashed #ff637d; outline-offset: 3px; }
-.preview.placement-editing .avatar.placement-selected { outline: 3px solid #ff637d; outline-offset: 6px; }
+.preview.placement-editing .avatar.placement-selected { outline: none; }
+.preview.placement-editing .avatar.placement-selected .avatar-img,
+.preview.placement-editing .avatar.placement-selected .avatar-fallback { outline: 3px solid #ff637d; outline-offset: 6px; }
 .preview.placement-editing .avatar:focus { outline: 2px solid #ff637d; outline-offset: 4px; }
 .preview.placement-editing .avatar.dragging { cursor: grabbing; }
 .preview.placement-editing .avatar-resize { position: absolute; right: -18px; bottom: -18px; z-index: 20; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 3px solid #090708; border-radius: 50%; background: #d0193c; color: white; cursor: nwse-resize; font-size: 1.2rem; font-weight: 900; box-shadow: 3px 3px 0 #090708; }
@@ -200,7 +202,7 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .preview, .overlay-stage { container-type: size; display: flex; justify-content: center; align-items: end; gap: 2cqw; padding: 2cqh 2cqw; }
 .preview.custom-layout, .overlay-stage.custom-layout { display: block; }
 .preview .avatar, .overlay-stage .avatar { flex: 0 1 22cqw; width: 22cqw; min-width: 0; max-width: 28cqw; height: 94cqh; }
-.preview .avatar-img, .overlay-stage .avatar-img { height: 100%; }
+.preview .avatar-img, .overlay-stage .avatar-img { max-height: 100%; }
 .preview .avatar-fallback, .overlay-stage .avatar-fallback { width: 20cqw; height: 70cqh; }
 .preview .avatar.webcam, .overlay-stage .avatar.webcam { width: 28cqw; height: auto; }
 .preview .avatar.webcam .webcam-img, .overlay-stage .avatar.webcam .webcam-img { height: auto; max-height: calc(94cqh - 48px); }
@@ -311,7 +313,7 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
   .card { padding: 14px; }
   .preview { min-height: 0; }
   .avatar { min-width: 100px; }
-  .avatar-img { height: 200px; }
+  .avatar-img { max-height: 200px; }
   .two-col { grid-template-columns: 1fr; }
   .animation-controls { grid-template-columns: 1fr; }
   .placement-control-row { grid-template-columns: 1fr auto 58px auto; }
