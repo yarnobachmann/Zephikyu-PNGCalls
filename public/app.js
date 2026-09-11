@@ -192,7 +192,9 @@ async function api(url, options = {}) {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed (${response.status})`);
+    const error = new Error(body.error || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 }
@@ -206,21 +208,24 @@ function toast(message) {
 }
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
+const tutorialRevision = "2";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
-    ["input[name='name']", "Start with the name that should appear below your avatar or camera."],
-    ["#name-font", "Choose how your display name should look in the room and OBS."],
+    ["input[name='name']", "Enter your display name. PNGCalls remembers it and the other setup choices on this device."],
+    ["#name-font", "Choose how your display name should look in the room and OBS. This choice is remembered too."],
+    ["#join-name-position", "Place your name on, below, above, left, or right of your avatar. The host can still fine tune it later."],
     ["#media-mode", "Choose PNG images or Webcam. Selecting Webcam hides the PNG uploads and opens the camera setup."],
+    ["#png-fields", "Choose separate idle and talking images. Both are preloaded and crossfade smoothly when you speak."],
     ["#find-cameras", "Find cameras lists every detected source. If one is busy, choose a different camera from the list."],
     ["input[name='accent']", "Pick the accent used for your speaking outline, camera border, and glow."],
     ["#animate-speaking", "Turn on a speaking animation, then choose the style beside it."],
-    ["#join-form button[type='submit']", "Join when the preview and settings look right. Keep this page open while playing."],
+    ["#join-form button[type='submit']", "Join when everything looks right. Your non-file choices are saved automatically for your next visit."],
   ];
   if (isJoin) return [
     ["#camera-output-preview", "This is the exact camera crop sent to the overlay."],
     ["#crop-controls", "Adjust zoom and position here. Changes are saved on this device."],
     [".meter", "The meter shows microphone activity. Your speaking state changes automatically."],
-    ["#leave-room", "Use this when you want to leave the overlay and forget this room on this device."],
+    ["#leave-room", "Use this to leave the current room. Your setup choices remain available if you join again."],
   ];
   if (document.querySelector("#auth-form")) return [];
   if (document.querySelector("#create-form")) return [
@@ -229,10 +234,11 @@ function tutorialSteps() {
   ];
   return [
     ["#copy-join", "Copy this invitation link and send it to every player who should appear."],
-    ["#copy-overlay", "Copy this private overlay link into an OBS Browser Source."],
-    ["#edit-placement", "Arrange players lets you drag and resize everyone. The same positions appear in OBS."],
-    ["[data-view='players']", "The player room shows who has joined and lets you edit each player."],
-    ["[data-view='settings']", "Settings control the room name, layout, background, and optional Discord connection."],
+    ["[data-reset-player-link]", "Reset the invitation between streams without changing your private OBS browser-source link."],
+    ["#copy-overlay", "Copy this private link into an OBS Browser Source. Speaking changes use the same direct live connection as this preview."],
+    ["#edit-placement", "Open Arrange players to drag and resize avatars and names. It includes name-position presets, independent name size, and alignment snapping with guide lines."],
+    ["[data-view='players']", "The player room shows everyone who joined. Edit a player to change images, font, name background, accent, and profile-picture fallback."],
+    ["[data-view='settings']", "Settings control the room and Discord Activity. The connector now keeps itself alive and reconnects automatically after interruptions."],
   ];
 }
 
@@ -248,7 +254,7 @@ function startTutorial() {
   const cleanup = () => {
     document.querySelectorAll(".tutorial-highlight").forEach((node) => node.classList.remove("tutorial-highlight"));
     popover.remove();
-    localStorage.setItem("pngcalls.tutorialSeen", "true");
+    localStorage.setItem("pngcalls.tutorialRevision", tutorialRevision);
   };
   const show = () => {
     document.querySelectorAll(".tutorial-highlight").forEach((node) => node.classList.remove("tutorial-highlight"));
@@ -283,14 +289,14 @@ function mountTutorialHelper() {
     return;
   }
   helper.querySelector("button").onclick = startTutorial;
-  if (localStorage.getItem("pngcalls.tutorialSeen")) return;
+  if (localStorage.getItem("pngcalls.tutorialRevision") === tutorialRevision) return;
   const prompt = document.createElement("div");
   prompt.className = "tutorial-prompt";
   const authPage = Boolean(document.querySelector("#auth-form"));
   prompt.innerHTML = `<section class="tutorial-prompt-card" role="dialog" aria-modal="true" aria-labelledby="tutorial-title"><img src="${tutorialImage}" alt="" /><div><div class="eyebrow">${authPage ? "Host territory" : "Welcome to PNGCalls"}</div><h2 id="tutorial-title">${authPage ? "Wrong door." : "Is this your first time here?"}</h2><p>${authPage ? "You are not allowed here you secondhand scoobydoo shoe." : "Zeph can show you where everything is."}</p><div class="actions"><button class="btn primary tutorial-yes" type="button">${authPage ? "I am the host" : "Yes, show me"}</button><button class="btn ghost tutorial-no" type="button">${authPage ? "Back away" : "No, thanks"}</button></div></div></section>`;
   document.body.append(prompt);
-  prompt.querySelector(".tutorial-yes").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialSeen", "true"); startTutorial(); };
-  prompt.querySelector(".tutorial-no").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialSeen", "true"); };
+  prompt.querySelector(".tutorial-yes").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialRevision", tutorialRevision); startTutorial(); };
+  prompt.querySelector(".tutorial-no").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialRevision", tutorialRevision); };
   prompt.querySelector(".tutorial-yes").focus();
 }
 
@@ -1234,7 +1240,12 @@ async function startMic(id, joinToken, identity, storageKey) {
   const heartbeat = () => leaving ? Promise.resolve() : api(`/api/join/${id}/${joinToken}/${identity.playerId}/heartbeat`, {
     method: "POST",
     body: JSON.stringify({ speaking }),
-  }).catch(() => {});
+  }).catch((error) => {
+    if ([401, 404, 410].includes(error.status)) {
+      leaving = true;
+      location.reload();
+    }
+  });
   heartbeat();
   setInterval(heartbeat, 500);
 

@@ -773,7 +773,13 @@ app.use(express.static("public", {
     if ([".html", ".js", ".css"].includes(path.extname(filePath))) res.set("Cache-Control", "no-store");
   },
 }));
-app.get(["/overlay/:sessionId/:overlayToken", "/join/:sessionId/:joinToken", "/setup", "/"], (_req, res) => {
+app.get("/join/:sessionId/:joinToken", async (req, res) => {
+  const room = await prisma.room.findUnique({ where: { id: cleanId(req.params.sessionId, "") }, select: { joinToken: true } });
+  res.set("Cache-Control", "no-store");
+  if (!room || !validRoomToken(req.params.joinToken, room.joinToken)) return res.status(410).sendFile(path.resolve("public/invalid-invite.html"));
+  res.sendFile(path.resolve("public/index.html"));
+});
+app.get(["/overlay/:sessionId/:overlayToken", "/setup", "/"], (_req, res) => {
   res.set("Cache-Control", "no-store");
   res.sendFile(path.resolve("public/index.html"));
 });

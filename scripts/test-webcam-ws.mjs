@@ -258,6 +258,9 @@ try {
   publisher.send(jpeg);
   assert.deepEqual(await received, jpeg);
 
+  const validInvitePage = await fetch(`${baseUrl}/join/${room.sessionId}/${room.joinToken}`);
+  assert.equal(validInvitePage.status, 200);
+
   const resetResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/reset-join`, {
     method: "POST",
     headers: { Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
@@ -274,6 +277,9 @@ try {
     body: JSON.stringify({ name: "Old link" }),
   });
   assert.equal(oldInviteResponse.status, 401);
+  const expiredInvitePage = await fetch(`${baseUrl}/join/${room.sessionId}/${room.joinToken}`);
+  assert.equal(expiredInvitePage.status, 410);
+  assert.match(await expiredInvitePage.text(), /player link is no longer active/i);
   const unchangedOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`);
   assert.equal(unchangedOverlay.status, 200);
   console.log("Discord companion, webcam transport, guest fonts, placement, and invite reset passed");
