@@ -116,7 +116,7 @@ function avatarMarkup(player) {
   const layer = Math.round(clamp(player.displayLayer || 0, 0, 1000));
   const nameBackgroundClass = player.nameBackground === "none" ? " no-background" : "";
   return `<article class="avatar font-${font} ${positioned ? "custom-position" : ""} ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)};--x:${x}%;--y:${y}%;--size:${size};--layer:${layer};--name-size:${nameSize};--name-x:${nameX}cqw;--name-y:${nameY}cqh;--name-bg:${escapeHtml(player.nameBackgroundColor || "#090305")}">
-    <div class="avatar-visual">${isWebcam && player.webcamImage ? `<img class="avatar-img webcam-img" src="${escapeHtml(player.webcamImage)}?v=${Date.now()}" data-webcam-src="${escapeHtml(player.webcamImage)}" alt="${escapeHtml(player.name)} webcam" />` : idleImage ? `<img class="avatar-img avatar-img-idle" src="${escapeHtml(idleImage)}" alt="" /><img class="avatar-img avatar-img-talking" src="${escapeHtml(talkingImage)}" alt="${escapeHtml(player.name)}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}</div>
+    <div class="avatar-visual">${isWebcam && player.localWebcamPreview ? `<canvas id="camera-output-preview" class="avatar-img webcam-img" width="640" height="360" aria-label="${escapeHtml(player.name)} camera preview"></canvas>` : isWebcam && player.webcamImage ? `<img class="avatar-img webcam-img" src="${escapeHtml(player.webcamImage)}?v=${Date.now()}" data-webcam-src="${escapeHtml(player.webcamImage)}" alt="${escapeHtml(player.name)} webcam" />` : idleImage ? `<img class="avatar-img avatar-img-idle" src="${escapeHtml(idleImage)}" alt="" /><img class="avatar-img avatar-img-talking" src="${escapeHtml(talkingImage)}" alt="${escapeHtml(player.name)}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}</div>
     <div class="avatar-name${nameBackgroundClass}" title="Drag to move the name">${escapeHtml(player.name)}</div>
     <button class="avatar-resize" type="button" aria-label="Resize ${escapeHtml(player.name)}" title="Drag to resize">↘</button>
   </article>`;
@@ -208,7 +208,7 @@ function toast(message) {
 }
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
-const tutorialRevision = "3";
+const tutorialRevision = "4";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
     ["input[name='name']", "Enter your display name. PNGCalls remembers it and the other setup choices on this device."],
@@ -223,6 +223,7 @@ function tutorialSteps() {
     ["#join-form button[type='submit']", "Join when everything looks right. Your non-file choices are saved automatically for your next visit."],
   ];
   if (isJoin) return [
+    ["#guest-live-preview", "This is how you appear in the overlay. Speak to test the talking image, accent, name, and animation live."],
     ["#camera-output-preview", "This is the exact camera crop sent to the overlay."],
     ["#crop-controls", "Adjust zoom and position here. Changes are saved on this device."],
     [".meter", "The meter shows microphone activity. Your speaking state changes automatically."],
@@ -1198,6 +1199,8 @@ async function runJoin() {
           name: form.get("name"),
           nameFont: normalizeNameFont(form.get("nameFont")),
           namePosition: form.get("namePosition"),
+          nameOffsetX: namePosition.x,
+          nameOffsetY: namePosition.y,
           accent: form.get("accent"),
           speakingAnimation,
           mediaMode,
@@ -1211,7 +1214,10 @@ async function runJoin() {
           const images = new FormData();
           images.append("idle", form.get("idle"));
           images.append("talking", form.get("talking"));
-          await api(`/api/join/${id}/${joinToken}/${identity.playerId}/images`, { method: "POST", body: images });
+          const imagePlayer = await api(`/api/join/${id}/${joinToken}/${identity.playerId}/images`, { method: "POST", body: images });
+          identity.idleImage = imagePlayer.idleImage || "";
+          identity.talkingImage = imagePlayer.talkingImage || identity.idleImage;
+          localStorage.setItem(storageKey, JSON.stringify(identity));
         }
         stopCameraPreview();
         await startMic(id, joinToken, identity, storageKey);
@@ -1228,7 +1234,17 @@ async function runJoin() {
   try {
     const resumed = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ playerId: identity.playerId }) });
     identity.mediaMode = resumed.player?.mediaMode || identity.mediaMode || "png";
+    identity.name = resumed.player?.name || identity.name;
     identity.nameFont = normalizeNameFont(resumed.player?.nameFont || identity.nameFont);
+    identity.accent = resumed.player?.accent || identity.accent;
+    identity.speakingAnimation = resumed.player?.speakingAnimation || identity.speakingAnimation || "none";
+    identity.idleImage = resumed.player?.idleImage || identity.idleImage || "";
+    identity.talkingImage = resumed.player?.talkingImage || identity.talkingImage || identity.idleImage;
+    identity.nameOffsetX = resumed.player?.nameOffsetX ?? identity.nameOffsetX ?? 0;
+    identity.nameOffsetY = resumed.player?.nameOffsetY ?? identity.nameOffsetY ?? 8;
+    identity.nameSize = resumed.player?.nameSize ?? identity.nameSize ?? 1;
+    identity.nameBackground = resumed.player?.nameBackground || identity.nameBackground || "solid";
+    identity.nameBackgroundColor = resumed.player?.nameBackgroundColor || identity.nameBackgroundColor || "#090305";
     identity.microphoneDeviceId = String(identity.microphoneDeviceId || "");
     identity.cameraFps = identity.cameraFps === 60 ? 60 : 30;
     identity.crop = normalizeCrop(identity.crop);
@@ -1243,12 +1259,30 @@ async function runJoin() {
 
 async function startMic(id, joinToken, identity, storageKey) {
   const useWebcam = identity.mediaMode === "webcam";
+  const previewPlayer = {
+    id: identity.playerId,
+    name: identity.name || "Player",
+    mediaMode: identity.mediaMode,
+    idleImage: identity.idleImage || "",
+    talkingImage: identity.talkingImage || identity.idleImage || "",
+    accent: identity.accent || "#d0193c",
+    speakingAnimation: identity.speakingAnimation || "none",
+    nameFont: identity.nameFont || "rounded",
+    nameOffsetX: identity.nameOffsetX ?? 0,
+    nameOffsetY: identity.nameOffsetY ?? 8,
+    nameSize: identity.nameSize ?? 1,
+    nameBackground: identity.nameBackground || "solid",
+    nameBackgroundColor: identity.nameBackgroundColor || "#090305",
+    speaking: false,
+    localWebcamPreview: useWebcam,
+  };
   app.innerHTML = `<main class="join-page">${studioShelfMarkup("join-studio-shelf")}<section class="join-card active-mic">
     ${brandMarkup()}
     <div class="eyebrow">Connected as ${escapeHtml(identity.name)}</div>
     <h1>Keep this tab open</h1>
     <p class="join-copy">${useWebcam ? "Your camera frames go to this PNGCalls server while this tab stays open." : "You can minimize this window. Only your speaking status is sent to the overlay."}</p>
-    ${useWebcam ? `<video id="camera-preview" autoplay muted playsinline hidden></video><canvas id="camera-output-preview" class="camera-preview" width="640" height="360"></canvas><div class="field"><label for="live-camera-fps">Frame rate</label><select id="live-camera-fps" class="input"><option value="30" ${identity.cameraFps === 60 ? "" : "selected"}>30 FPS</option><option value="60" ${identity.cameraFps === 60 ? "selected" : ""}>60 FPS</option></select></div>${cropControlsMarkup()}` : ""}
+    <section class="guest-preview-panel"><div class="guest-preview-heading"><strong>Your overlay preview</strong><span>Speak to test it</span></div><div id="guest-live-preview" class="preview">${avatarMarkup(previewPlayer)}</div></section>
+    ${useWebcam ? `<video id="camera-preview" autoplay muted playsinline hidden></video><div class="field"><label for="live-camera-fps">Frame rate</label><select id="live-camera-fps" class="input"><option value="30" ${identity.cameraFps === 60 ? "" : "selected"}>30 FPS</option><option value="60" ${identity.cameraFps === 60 ? "selected" : ""}>60 FPS</option></select></div>${cropControlsMarkup()}` : ""}
     <div class="meter"><span id="meter-bar"></span></div>
     <div class="mic-state"><span class="dot live"></span><strong id="mic-label">Listening for your voice</strong></div>
     <button id="leave-room" class="btn ghost">Forget this room</button>
@@ -1381,6 +1415,7 @@ async function startMic(id, joinToken, identity, storageKey) {
     const detected = level > 0.035;
     silenceFrames = detected ? 0 : silenceFrames + 1;
     speaking = detected || (speaking && silenceFrames < 10);
+    document.querySelector("#guest-live-preview .avatar")?.classList.toggle("speaking", speaking);
     document.querySelector("#meter-bar").style.transform = `scaleX(${Math.min(1, level * 12)})`;
     document.querySelector("#mic-label").textContent = speaking ? "Speaking" : "Listening for your voice";
   };

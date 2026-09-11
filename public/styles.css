@@ -150,6 +150,10 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .font-preview { display: block; min-height: 38px; padding: 8px 12px; border-left: 4px solid var(--acid); background: #10090b; color: #fff3f5; font-size: 1.05rem; }
 .active-mic { text-align: center; }
 .active-mic .brand { justify-content: center; }
+.guest-preview-panel { display: grid; gap: 10px; margin: 26px 0 20px; text-align: left; }
+.guest-preview-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.guest-preview-heading span { color: var(--muted); font-size: .82rem; }
+.guest-preview-panel .preview { width: 100%; }
 .camera-preview { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 18px; border: 1px solid #6d1d2e; background: #050203; }
 .camera-picker { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 20px 13px 22px 14px; background: #0d0608; }
 .camera-picker[hidden] { display: none; }
