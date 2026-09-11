@@ -51,6 +51,7 @@ tar -xzf "${temp_dir}/source.tar.gz" -C "${APP_DIR}" --strip-components=1
 cd "${APP_DIR}"
 "${NODE_BIN}" "${NPM_CLI}" ci
 "${NODE_BIN}" "${NPX_CLI}" prisma generate
+"${NODE_BIN}" "${NPM_CLI}" run build:activity
 "${NODE_BIN}" "${NPM_CLI}" prune --omit=dev
 chown -R root:root "${APP_DIR}"
 

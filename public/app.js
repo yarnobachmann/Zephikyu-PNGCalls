@@ -11,6 +11,7 @@ let discordConnection = null;
 let dashboardEvents = null;
 let placementEditing = false;
 let selectedPlacementId = null;
+let placementSnapEnabled = localStorage.getItem("pngcalls.placementSnap") !== "false";
 
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
@@ -560,6 +561,9 @@ function bindPlacementEditor() {
   const nameSizeInput = document.querySelector("#name-size");
   const nameSizeOutput = document.querySelector("#name-size-output");
   const namePositionInput = document.querySelector("#name-position");
+  const snapInput = document.querySelector("#placement-snap");
+  const snapGuideX = document.querySelector("#snap-guide-x");
+  const snapGuideY = document.querySelector("#snap-guide-y");
   const selectedName = document.querySelector("#selected-placement-name");
   const selectedPlayer = () => session.players.find((entry) => entry.id === selectedPlacementId) || session.players[0];
   const syncSizeControls = () => {
@@ -601,6 +605,13 @@ function bindPlacementEditor() {
   }
   document.querySelector("#name-smaller")?.addEventListener("click", () => setSelectedNameSize((selectedPlayer()?.nameSize || 1) - 0.1, true));
   document.querySelector("#name-larger")?.addEventListener("click", () => setSelectedNameSize((selectedPlayer()?.nameSize || 1) + 0.1, true));
+  if (snapInput) {
+    snapInput.checked = placementSnapEnabled;
+    snapInput.onchange = () => {
+      placementSnapEnabled = snapInput.checked;
+      localStorage.setItem("pngcalls.placementSnap", String(placementSnapEnabled));
+    };
+  }
   if (namePositionInput) namePositionInput.onchange = () => {
     const player = selectedPlayer();
     const preset = namePositionPresets[namePositionInput.value];
@@ -636,6 +647,8 @@ function bindPlacementEditor() {
       avatar.classList.add("dragging", "custom-position");
       avatar.setPointerCapture(event.pointerId);
       const move = (moveEvent) => {
+        if (snapGuideX) snapGuideX.hidden = true;
+        if (snapGuideY) snapGuideY.hidden = true;
         if (movingName) {
           player.nameOffsetX = clamp(initialNameX + ((moveEvent.clientX - startX) / previewRect.width) * 100, -100, 100);
           player.nameOffsetY = clamp(initialNameY + ((moveEvent.clientY - startY) / previewRect.height) * 100, -100, 100);
@@ -645,8 +658,27 @@ function bindPlacementEditor() {
           if (sizeInput) sizeInput.value = String(player.displaySize);
           if (sizeOutput) sizeOutput.textContent = `${Math.round(player.displaySize * 100)}%`;
         } else {
-          player.positionX = clamp(initialX + ((moveEvent.clientX - startX) / previewRect.width) * 100, 0, 100);
-          player.positionY = clamp(initialY + ((moveEvent.clientY - startY) / previewRect.height) * 100, 0, 100);
+          let nextX = clamp(initialX + ((moveEvent.clientX - startX) / previewRect.width) * 100, 0, 100);
+          let nextY = clamp(initialY + ((moveEvent.clientY - startY) / previewRect.height) * 100, 0, 100);
+          if (placementSnapEnabled) {
+            const others = session.players.filter((entry) => entry.id !== player.id && entry.positionX !== null && entry.positionY !== null);
+            const nearest = (value, candidates, threshold) => candidates.reduce((match, candidate) => {
+              if (Math.abs(candidate - value) > threshold) return match;
+              return match === null || Math.abs(candidate - value) < Math.abs(match - value) ? candidate : match;
+            }, null);
+            const snappedX = nearest(nextX, [50, ...others.map((entry) => entry.positionX)], (10 / previewRect.width) * 100);
+            const snappedY = nearest(nextY, [50, ...others.map((entry) => entry.positionY)], (10 / previewRect.height) * 100);
+            if (snappedX !== null) {
+              nextX = snappedX;
+              if (snapGuideX) { snapGuideX.style.left = `${snappedX}%`; snapGuideX.hidden = false; }
+            }
+            if (snappedY !== null) {
+              nextY = snappedY;
+              if (snapGuideY) { snapGuideY.style.top = `${snappedY}%`; snapGuideY.hidden = false; }
+            }
+          }
+          player.positionX = nextX;
+          player.positionY = nextY;
         }
         avatar.style.setProperty("--x", `${player.positionX}%`);
         avatar.style.setProperty("--y", `${player.positionY}%`);
@@ -656,6 +688,8 @@ function bindPlacementEditor() {
         avatar.style.setProperty("--layer", player.displayLayer);
       };
       const finish = () => {
+        if (snapGuideX) snapGuideX.hidden = true;
+        if (snapGuideY) snapGuideY.hidden = true;
         avatar.classList.remove("dragging");
         avatar.onpointermove = null;
         avatar.onpointerup = null;
@@ -718,8 +752,8 @@ function renderDashboard() {
         <section class="card">
           <div class="card-head"><div><h2>Live preview</h2><p class="subtle">This now follows the same live feed as OBS.</p></div><span id="live-count-badge" class="badge ${session.onlineCount ? "live" : ""}">${session.onlineCount ? `${session.onlineCount} ONLINE` : "PREVIEW"}</span></div>
           <div class="placement-toolbar"><button id="edit-placement" class="btn ${placementEditing ? "primary" : "ghost"}" type="button">${placementEditing ? "Done arranging" : "Arrange players"}</button><button id="reset-placement" class="btn ghost" type="button" ${customArrangement ? "" : "hidden"}>Reset arrangement</button><span>${placementEditing ? "Drag players to move them. Select one and use the size controls." : "Positions are shared with the OBS browser source."}</span></div>
-          ${placementEditing && players.length ? `<div class="placement-controls"><strong id="selected-placement-name">Arrange player</strong><div class="placement-control-row"><span>Avatar size</span><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div><div class="placement-control-row"><span>Name size</span><button id="name-smaller" class="btn compact" type="button" aria-label="Make selected name smaller">Smaller</button><input id="name-size" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="Selected name size" /><output id="name-size-output">100%</output><button id="name-larger" class="btn compact" type="button" aria-label="Make selected name larger">Larger</button></div><div class="placement-name-position"><label for="name-position">Name position</label><select id="name-position" class="input">${namePositionOptions()}</select></div><p>Choose a name position, then drag the label for fine adjustment.</p></div>` : ""}
-          <div id="live-preview" class="preview ${escapeHtml(session.background)} ${escapeHtml(session.layout)} ${customArrangement ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
+          ${placementEditing && players.length ? `<div class="placement-controls"><strong id="selected-placement-name">Arrange player</strong><div class="placement-control-row"><span>Avatar size</span><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div><div class="placement-control-row"><span>Name size</span><button id="name-smaller" class="btn compact" type="button" aria-label="Make selected name smaller">Smaller</button><input id="name-size" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="Selected name size" /><output id="name-size-output">100%</output><button id="name-larger" class="btn compact" type="button" aria-label="Make selected name larger">Larger</button></div><div class="placement-name-position"><label for="name-position">Name position</label><select id="name-position" class="input">${namePositionOptions()}</select></div><label class="placement-snap"><input id="placement-snap" type="checkbox" ${placementSnapEnabled ? "checked" : ""} /><span>Snap to other players and the canvas center</span></label><p>Choose a name position, then drag the label for fine adjustment.</p></div>` : ""}
+          <div id="live-preview" class="preview ${escapeHtml(session.background)} ${escapeHtml(session.layout)} ${customArrangement ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${placementEditing ? `<div id="snap-guide-x" class="snap-guide vertical" hidden></div><div id="snap-guide-y" class="snap-guide horizontal" hidden></div>` : ""}${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
           <div class="game-strip"><span>Works with</span><strong>R.E.P.O.</strong><strong>PEAK</strong><strong>Meccha Chameleon</strong><strong>Any game</strong></div>
         </section>
         <div class="stack">

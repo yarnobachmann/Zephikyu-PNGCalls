@@ -87,6 +87,11 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .placement-control-row output { color: var(--muted); font: 700 .78rem ui-monospace, "Cascadia Mono", monospace; text-align: right; }
 .placement-name-position { display: grid; grid-template-columns: 90px minmax(180px, 320px); gap: 10px; align-items: center; }
 .placement-name-position label { color: var(--muted); font-size: .82rem; }
+.placement-snap { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: .82rem; cursor: pointer; }
+.placement-snap input { width: 18px; height: 18px; accent-color: var(--acid); }
+.snap-guide { position: absolute; z-index: 19; pointer-events: none; background: #55e8ff; box-shadow: 0 0 8px #55e8ffaa; }
+.snap-guide.vertical { top: 0; bottom: 0; width: 1px; transform: translateX(-.5px); }
+.snap-guide.horizontal { left: 0; right: 0; height: 1px; transform: translateY(-.5px); }
 .avatar-resize { display: none; }
 .preview.placement-editing { outline: 2px dashed #d0193c; outline-offset: 4px; }
 .preview.placement-editing .avatar { cursor: grab; touch-action: none; user-select: none; }
@@ -322,6 +327,7 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
   .animation-controls { grid-template-columns: 1fr; }
   .placement-control-row { grid-template-columns: 1fr auto 58px auto; }
   .placement-control-row > span { grid-column: 1 / -1; }
+  .placement-name-position { grid-template-columns: 1fr; }
   .room-callout { grid-template-columns: 1fr; }
   .tutorial-helper { right: 6px; bottom: 6px; }
   .tutorial-helper button, .tutorial-helper img { width: 94px; height: 94px; }
