@@ -705,7 +705,8 @@ app.post("/api/join/:sessionId/:joinToken", joinLimit, async (req, res) => {
   }
   const player = await prisma.player.create({ data: {
     id: token(8), roomId: room.id, name: cleanText(req.body?.name, "Player", 60), accent: /^#[0-9a-f]{6}$/i.test(req.body?.accent) ? req.body.accent : "#d0193c",
-    pinned: false, joinKey: token(24), mediaMode: req.body?.mediaMode === "webcam" ? "webcam" : "png", speakingAnimation: speakingAnimation(req.body?.speakingAnimation), nameFont: nameFont(req.body?.nameFont), presence: { create: { source: "browser" } },
+    pinned: false, joinKey: token(24), mediaMode: req.body?.mediaMode === "webcam" ? "webcam" : "png", speakingAnimation: speakingAnimation(req.body?.speakingAnimation), nameFont: nameFont(req.body?.nameFont),
+    nameOffsetX: boundedNumber(req.body?.nameOffsetX, -100, 100, 0), nameOffsetY: boundedNumber(req.body?.nameOffsetY, -100, 100, 8), presence: { create: { source: "browser" } },
   } });
   await prisma.room.update({ where: { id: room.id }, data: { updatedAt: new Date() } }); await audit(req, "guest.join", "success", room.id, "guest"); await broadcast(room.id);
   setCookie(res, guestCookieName(room.id), `${player.id}.${player.joinKey}`, 60 * 60 * 12, cookieSecure(req), true);

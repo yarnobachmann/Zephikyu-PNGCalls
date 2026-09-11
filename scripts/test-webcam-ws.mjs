@@ -192,12 +192,14 @@ try {
   const joinResponse = await fetch(`${baseUrl}/api/join/${room.sessionId}/${room.joinToken}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "Camera", mediaMode: "webcam", nameFont: "typewriter" }),
+    body: JSON.stringify({ name: "Camera", mediaMode: "webcam", nameFont: "typewriter", nameOffsetX: -14, nameOffsetY: -32 }),
   });
   assert.equal(joinResponse.status, 201);
   const participant = await joinResponse.json();
   const guestCookie = cookiesFrom(joinResponse);
   assert.equal(participant.player.nameFont, "typewriter");
+  assert.equal(participant.player.nameOffsetX, -14);
+  assert.equal(participant.player.nameOffsetY, -32);
   const overlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
   assert.equal(overlay.players.find((player) => player.id === participant.playerId).nameFont, "typewriter");
 

@@ -32,7 +32,14 @@ const namePositionPresets = {
   left: { x: -14, y: -32 },
   right: { x: 14, y: -32 },
 };
-const namePositionOptions = (includeCurrent = true) => `${includeCurrent ? '<option value="current">Keep current position</option>' : ""}<option value="overlay">On the image</option><option value="below">Below</option><option value="above">Above</option><option value="left">Left side</option><option value="right">Right side</option>`;
+const namePositionOptions = (selected = "current", includeCurrent = true) => [
+  ...(includeCurrent ? [["current", "Keep current position"]] : []),
+  ["overlay", "On the image"], ["below", "Below"], ["above", "Above"], ["left", "Left side"], ["right", "Right side"],
+].map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
+const storedJson = (key, fallback = null) => {
+  try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; }
+  catch { return fallback; }
+};
 function normalizeCrop(crop = {}) {
   return {
     zoom: clamp(crop.zoom || 1, 1, 8),
@@ -95,7 +102,8 @@ function bindCropControls(initialCrop = {}, onChange = () => {}) {
 function avatarMarkup(player) {
   const isWebcam = player.mediaMode === "webcam";
   const avatarFallback = player.useDiscordAvatar ? player.discordAvatar : null;
-  const image = isWebcam ? player.webcamImage : player.speaking ? player.talkingImage || player.idleImage || avatarFallback : player.idleImage || avatarFallback;
+  const idleImage = player.idleImage || avatarFallback;
+  const talkingImage = player.talkingImage || idleImage;
   const animation = ["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none";
   const font = normalizeNameFont(player.nameFont);
   const positioned = player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined;
@@ -108,7 +116,7 @@ function avatarMarkup(player) {
   const layer = Math.round(clamp(player.displayLayer || 0, 0, 1000));
   const nameBackgroundClass = player.nameBackground === "none" ? " no-background" : "";
   return `<article class="avatar font-${font} ${positioned ? "custom-position" : ""} ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)};--x:${x}%;--y:${y}%;--size:${size};--layer:${layer};--name-size:${nameSize};--name-x:${nameX}cqw;--name-y:${nameY}cqh;--name-bg:${escapeHtml(player.nameBackgroundColor || "#090305")}">
-    <div class="avatar-visual">${image ? `<img class="avatar-img ${isWebcam ? "webcam-img" : ""}" src="${escapeHtml(image)}${isWebcam ? `?v=${Date.now()}` : ""}" ${isWebcam ? `data-webcam-src="${escapeHtml(image)}"` : ""} alt="${isWebcam ? `${escapeHtml(player.name)} webcam` : ""}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}</div>
+    <div class="avatar-visual">${isWebcam && player.webcamImage ? `<img class="avatar-img webcam-img" src="${escapeHtml(player.webcamImage)}?v=${Date.now()}" data-webcam-src="${escapeHtml(player.webcamImage)}" alt="${escapeHtml(player.name)} webcam" />` : idleImage ? `<img class="avatar-img avatar-img-idle" src="${escapeHtml(idleImage)}" alt="" /><img class="avatar-img avatar-img-talking" src="${escapeHtml(talkingImage)}" alt="${escapeHtml(player.name)}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}</div>
     <div class="avatar-name${nameBackgroundClass}" title="Drag to move the name">${escapeHtml(player.name)}</div>
     <button class="avatar-resize" type="button" aria-label="Resize ${escapeHtml(player.name)}" title="Drag to resize">↘</button>
   </article>`;
@@ -427,9 +435,12 @@ function applyPlayerState(avatar, player, includePlacement = true) {
   }
   if (player.mediaMode !== "webcam") {
     const avatarFallback = player.useDiscordAvatar ? player.discordAvatar : null;
-    const source = player.speaking ? player.talkingImage || player.idleImage || avatarFallback : player.idleImage || avatarFallback;
-    const image = avatar.querySelector(".avatar-img");
-    if (image && source && image.getAttribute("src") !== source) image.src = source;
+    const idleSource = player.idleImage || avatarFallback;
+    const talkingSource = player.talkingImage || idleSource;
+    const idleImage = avatar.querySelector(".avatar-img-idle");
+    const talkingImage = avatar.querySelector(".avatar-img-talking");
+    if (idleImage && idleSource && idleImage.getAttribute("src") !== idleSource) idleImage.src = idleSource;
+    if (talkingImage && talkingSource && talkingImage.getAttribute("src") !== talkingSource) talkingImage.src = talkingSource;
   }
 }
 
@@ -994,7 +1005,9 @@ async function initializeHost() {
 async function runJoin() {
   const [, id, joinToken] = pathParts;
   const storageKey = `pngcalls.join.${id}`;
-  let identity = JSON.parse(localStorage.getItem(storageKey) || "null");
+  const draftKey = `pngcalls.joinDraft.${id}`;
+  let identity = storedJson(storageKey);
+  let draft = storedJson(draftKey, {});
   let cameraPreviewStream = null;
   let cropPreviewAnimation = 0;
 
@@ -1014,21 +1027,22 @@ async function runJoin() {
         <h1>Join the overlay</h1>
         <p class="join-copy">Choose PNG images or a webcam. Microphone audio stays on this device. Webcam mode sends camera frames only to this PNGCalls server.</p>
         <form id="join-form" class="stack">
-          <div class="field"><label>Display name</label><input class="input" name="name" required maxlength="60" placeholder="Your name" /></div>
-          <div class="field"><label for="name-font">Name font</label><select id="name-font" class="input font-choice font-rounded" name="nameFont">${nameFontOptions()}</select><span id="font-preview" class="font-preview font-rounded">Your name will look like this</span></div>
-          <div class="field"><label>Appearance</label><select id="media-mode" class="input" name="mediaMode"><option value="png">PNG images</option><option value="webcam">Webcam</option></select></div>
+          <div class="field"><label>Display name</label><input class="input" name="name" required maxlength="60" placeholder="Your name" value="${escapeHtml(draft.name || "")}" /></div>
+          <div class="field"><label for="name-font">Name font</label><select id="name-font" class="input font-choice font-${normalizeNameFont(draft.nameFont)}" name="nameFont">${nameFontOptions(normalizeNameFont(draft.nameFont))}</select><span id="font-preview" class="font-preview font-${normalizeNameFont(draft.nameFont)}">Your name will look like this</span></div>
+          <div class="field"><label for="join-name-position">Name position</label><select id="join-name-position" class="input" name="namePosition">${namePositionOptions(draft.namePosition || "below", false)}</select><span class="hint">The host can fine tune the exact position later.</span></div>
+          <div class="field"><label>Appearance</label><select id="media-mode" class="input" name="mediaMode"><option value="png" ${draft.mediaMode !== "webcam" ? "selected" : ""}>PNG images</option><option value="webcam" ${draft.mediaMode === "webcam" ? "selected" : ""}>Webcam</option></select></div>
           <div id="png-fields" class="two-col"><div class="field"><label>Idle image</label><input class="input" name="idle" type="file" required accept="image/png,image/jpeg,image/webp,image/gif" /></div><div class="field"><label>Talking image</label><input class="input" name="talking" type="file" required accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
           <section id="camera-fields" class="camera-picker" hidden>
             <div class="field"><label for="camera-device">Camera source</label><div class="camera-actions"><select id="camera-device" class="input" name="cameraDeviceId" disabled><option value="">Find cameras first</option></select><button id="find-cameras" class="btn ghost" type="button">Find cameras</button></div></div>
-            <div class="field"><label for="camera-fps">Frame rate</label><select id="camera-fps" class="input" name="cameraFps"><option value="30" selected>30 FPS</option><option value="60">60 FPS</option></select></div>
+            <div class="field"><label for="camera-fps">Frame rate</label><select id="camera-fps" class="input" name="cameraFps"><option value="30" ${draft.cameraFps === 60 ? "" : "selected"}>30 FPS</option><option value="60" ${draft.cameraFps === 60 ? "selected" : ""}>60 FPS</option></select></div>
             <video id="camera-test-preview" autoplay muted playsinline hidden></video>
             <canvas id="crop-test-preview" class="camera-preview" width="640" height="360" hidden></canvas>
             ${cropControlsMarkup(true)}
             <p id="camera-status" class="hint">Start OBS Virtual Camera, then press Find cameras. If the default camera is busy, you can still choose another detected source.</p>
           </section>
           <p id="webcam-note" class="hint" hidden>Choose 30 FPS for normal use or 60 FPS for smoother motion. PNGCalls streams the latest frame and does not make a video recording.</p>
-          <div class="field"><label>Speaking accent</label><input class="input" name="accent" type="color" value="#d0193c" /><span class="hint">Used for the name outline, webcam border, and glow while speaking.</span></div>
-          <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input" disabled><option value="bounce">Bounce</option><option value="pulse">Pulse</option><option value="shake">Shake</option><option value="glow">Glow</option></select></div></div>
+          <div class="field"><label>Speaking accent</label><input class="input" name="accent" type="color" value="${escapeHtml(draft.accent || "#d0193c")}" /><span class="hint">Used for the name outline, webcam border, and glow while speaking.</span></div>
+          <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" ${draft.speakingAnimation && draft.speakingAnimation !== "none" ? "checked" : ""} /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input"><option value="bounce" ${draft.speakingAnimation === "bounce" ? "selected" : ""}>Bounce</option><option value="pulse" ${draft.speakingAnimation === "pulse" ? "selected" : ""}>Pulse</option><option value="shake" ${draft.speakingAnimation === "shake" ? "selected" : ""}>Shake</option><option value="glow" ${draft.speakingAnimation === "glow" ? "selected" : ""}>Glow</option></select></div></div>
           <button class="btn primary" type="submit">Join and enable microphone</button>
         </form>
       </section>
@@ -1057,13 +1071,33 @@ async function runJoin() {
     syncMode();
     const animationToggle = document.querySelector("#animate-speaking");
     const animationSelect = document.querySelector("#speaking-animation");
-    animationToggle.onchange = () => { animationSelect.disabled = !animationToggle.checked; };
+    const joinForm = document.querySelector("#join-form");
+    const saveDraft = () => {
+      const form = new FormData(joinForm);
+      draft = {
+        name: String(form.get("name") || ""),
+        nameFont: normalizeNameFont(form.get("nameFont")),
+        namePosition: namePositionPresets[form.get("namePosition")] ? form.get("namePosition") : "below",
+        mediaMode: form.get("mediaMode") === "webcam" ? "webcam" : "png",
+        accent: String(form.get("accent") || "#d0193c"),
+        speakingAnimation: form.get("animateSpeaking") ? String(form.get("speakingAnimation") || "bounce") : "none",
+        cameraDeviceId: String(form.get("cameraDeviceId") || draft.cameraDeviceId || ""),
+        cameraFps: form.get("cameraFps") === "60" ? 60 : 30,
+        crop: normalizeCrop({ zoom: form.get("cropZoom"), x: form.get("cropX"), y: form.get("cropY") }),
+      };
+      localStorage.setItem(draftKey, JSON.stringify(draft));
+    };
+    const syncAnimation = () => { animationSelect.disabled = !animationToggle.checked; };
+    animationToggle.onchange = syncAnimation;
+    syncAnimation();
+    joinForm.addEventListener("input", saveDraft);
+    joinForm.addEventListener("change", saveDraft);
     const cameraSelect = document.querySelector("#camera-device");
     const cameraStatus = document.querySelector("#camera-status");
     const cameraPreview = document.querySelector("#camera-test-preview");
     const cropPreview = document.querySelector("#crop-test-preview");
     const cropControls = document.querySelector("#crop-controls");
-    const currentCrop = bindCropControls();
+    const currentCrop = bindCropControls(draft.crop || {});
     const renderCropPreview = () => {
       drawCroppedFrame(cameraPreview, cropPreview, currentCrop());
       cropPreviewAnimation = requestAnimationFrame(renderCropPreview);
@@ -1116,7 +1150,7 @@ async function runJoin() {
         cameraStatus.textContent = `Could not open this camera: ${error.message}`;
       }
     };
-    document.querySelector("#join-form").onsubmit = async (event) => {
+    joinForm.onsubmit = async (event) => {
       event.preventDefault();
       const submit = event.submitter;
       submit.disabled = true;
@@ -1125,11 +1159,16 @@ async function runJoin() {
         const form = new FormData(event.currentTarget);
         const mediaMode = form.get("mediaMode");
         const speakingAnimation = form.get("animateSpeaking") ? form.get("speakingAnimation") : "none";
-        const joined = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ name: form.get("name"), nameFont: normalizeNameFont(form.get("nameFont")), accent: form.get("accent"), mediaMode, speakingAnimation }) });
+        const namePosition = namePositionPresets[form.get("namePosition")] || namePositionPresets.below;
+        saveDraft();
+        const joined = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ name: form.get("name"), nameFont: normalizeNameFont(form.get("nameFont")), nameOffsetX: namePosition.x, nameOffsetY: namePosition.y, accent: form.get("accent"), mediaMode, speakingAnimation }) });
         identity = {
           playerId: joined.playerId,
           name: form.get("name"),
           nameFont: normalizeNameFont(form.get("nameFont")),
+          namePosition: form.get("namePosition"),
+          accent: form.get("accent"),
+          speakingAnimation,
           mediaMode,
           cameraDeviceId: mediaMode === "webcam" ? form.get("cameraDeviceId") || "" : "",
           cameraFps: mediaMode === "webcam" && form.get("cameraFps") === "60" ? 60 : 30,
