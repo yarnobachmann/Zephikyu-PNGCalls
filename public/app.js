@@ -434,7 +434,7 @@ function syncDashboardLive(data) {
     } : null;
     Object.assign(current, incoming, draftPlacement || {});
   });
-  preview?.classList.toggle("custom-layout", hasCustomPlacement(session.players));
+  if (preview) preview.className = `preview ${session.background} ${session.layout} ${hasCustomPlacement(session.players) ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}`;
   session.players.forEach((player) => {
     const avatar = preview?.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`);
     if (avatar) applyPlayerState(avatar, player);
@@ -644,7 +644,7 @@ function renderDashboard() {
           <div class="card-head"><div><h2>Live preview</h2><p class="subtle">This now follows the same live feed as OBS.</p></div><span id="live-count-badge" class="badge ${session.onlineCount ? "live" : ""}">${session.onlineCount ? `${session.onlineCount} ONLINE` : "PREVIEW"}</span></div>
           <div class="placement-toolbar"><button id="edit-placement" class="btn ${placementEditing ? "primary" : "ghost"}" type="button">${placementEditing ? "Done arranging" : "Arrange players"}</button><button id="reset-placement" class="btn ghost" type="button" ${customArrangement ? "" : "hidden"}>Reset arrangement</button><span>${placementEditing ? "Drag players to move them. Select one and use the size controls." : "Positions are shared with the OBS browser source."}</span></div>
           ${placementEditing && players.length ? `<div class="placement-size-controls"><strong id="selected-placement-name">Resize player</strong><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div>` : ""}
-          <div id="live-preview" class="preview ${escapeHtml(session.background)} ${customArrangement ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
+          <div id="live-preview" class="preview ${escapeHtml(session.background)} ${escapeHtml(session.layout)} ${customArrangement ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
           <div class="game-strip"><span>Works with</span><strong>R.E.P.O.</strong><strong>PEAK</strong><strong>Meccha Chameleon</strong><strong>Any game</strong></div>
         </section>
         <div class="stack">

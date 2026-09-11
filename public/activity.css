@@ -1,6 +1,6 @@
 :root { color-scheme: dark; font-family: "Trebuchet MS", Verdana, sans-serif; background: #171113; color: #fff3f5; }
 * { box-sizing: border-box; }
-body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 28px; background: #171113; }
+body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 28px; background-color: #261a1d; background-image: url("/assets/studio/panels.png"); background-position: center; background-size: cover; background-blend-mode: multiply; }
 .activity-card { width: min(520px, 100%); padding: 30px; border: 3px solid #080607; border-radius: 22px 15px 24px 17px; background: #211719; box-shadow: 7px 8px 0 #080607; }
 .mascot { width: 72px; height: 72px; object-fit: contain; float: right; margin: -10px -6px 8px 20px; }
 .eyebrow { margin: 0 0 10px; color: #df8da0; font: 700 12px/1.2 Consolas, monospace; letter-spacing: .13em; }
@@ -19,4 +19,3 @@ button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #080607; }
 .voice-dot.speaking { background: #43b581; transform: scale(1.25); }
 .footnote { margin: 20px 0 0; color: #a98990; font-size: 13px; line-height: 1.45; }
 @media (max-width: 460px) { .room-controls { grid-template-columns: 1fr; } .activity-card { padding: 22px; } }
-
