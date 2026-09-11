@@ -34,6 +34,9 @@ const speakingAnimations = new Set(["none", "bounce", "pulse", "shake", "glow"])
 const speakingAnimation = (value) => speakingAnimations.has(value) ? value : "none";
 const nameFonts = new Set(["rounded", "comic", "typewriter", "classic", "bold"]);
 const nameFont = (value) => nameFonts.has(value) ? value : "rounded";
+const nameBackgrounds = new Set(["solid", "none"]);
+const nameBackground = (value) => nameBackgrounds.has(value) ? value : "solid";
+const color = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
 const boundedNumber = (value, minimum, maximum, fallback = null) => {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
@@ -226,6 +229,8 @@ function publicRoom(room) {
       mediaMode: player.mediaMode || "png",
       speakingAnimation: speakingAnimation(player.speakingAnimation),
       nameFont: nameFont(player.nameFont),
+      nameSize: boundedNumber(player.nameSize, 0.5, 3, 1), nameOffsetX: boundedNumber(player.nameOffsetX, -100, 100, 0), nameOffsetY: boundedNumber(player.nameOffsetY, -100, 100, 0),
+      nameBackground: nameBackground(player.nameBackground), nameBackgroundColor: color(player.nameBackgroundColor, "#090305"),
       positionX: player.positionX, positionY: player.positionY,
       displaySize: boundedNumber(player.displaySize, 0.4, 2.5, 1), displayLayer: Math.round(boundedNumber(player.displayLayer, 0, 1000, 0)),
       webcamImage: player.mediaMode === "webcam" ? `/api/webcam/${room.id}/${room.overlayToken}/${player.id}` : null,
@@ -586,7 +591,7 @@ app.post("/api/sessions/:sessionId/reset-join", requireHost, requireCsrf, async 
 app.put("/api/sessions/:sessionId/placements", requireHost, requireCsrf, async (req, res) => {
   const room = await getRoom(req, res); if (!room) return;
   if (req.body?.reset === true) {
-    await prisma.player.updateMany({ where: { roomId: room.id }, data: { positionX: null, positionY: null, displaySize: 1, displayLayer: 0 } });
+    await prisma.player.updateMany({ where: { roomId: room.id }, data: { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0 } });
   } else {
     const placements = Array.isArray(req.body?.players) ? req.body.players.slice(0, 32) : [];
     const roomPlayerIds = new Set(room.players.map((player) => player.id));
@@ -596,6 +601,7 @@ app.put("/api/sessions/:sessionId/placements", requireHost, requireCsrf, async (
       data: {
         positionX: boundedNumber(entry.x, 0, 100, 50), positionY: boundedNumber(entry.y, 0, 100, 50),
         displaySize: boundedNumber(entry.size, 0.4, 2.5, 1), displayLayer: Math.round(boundedNumber(entry.layer, 0, 1000, 0)),
+        nameSize: boundedNumber(entry.nameSize, 0.5, 3, 1), nameOffsetX: boundedNumber(entry.nameX, -100, 100, 0), nameOffsetY: boundedNumber(entry.nameY, -100, 100, 0),
       },
     })));
   }
@@ -611,11 +617,15 @@ app.put("/api/sessions/:sessionId/players/:playerId", requireHost, requireCsrf, 
   const conflicting = await prisma.player.findUnique({ where: { id }, select: { roomId: true } });
   if (conflicting && conflicting.roomId !== room.id) return res.status(409).json({ error: "Player ID already exists" });
   const player = await prisma.player.upsert({ where: { id }, create: {
-    id, roomId: room.id, name: cleanText(req.body?.name, id, 60), accent: /^#[0-9a-f]{6}$/i.test(req.body?.accent) ? req.body.accent : "#d0193c",
-    pinned: req.body?.pinned === undefined ? true : Boolean(req.body.pinned), mediaMode: "png", speakingAnimation: speakingAnimation(req.body?.speakingAnimation), nameFont: nameFont(req.body?.nameFont), presence: { create: { source: "manual" } },
+    id, roomId: room.id, name: cleanText(req.body?.name, id, 60), accent: color(req.body?.accent, "#d0193c"),
+    pinned: req.body?.pinned === undefined ? true : Boolean(req.body.pinned), mediaMode: "png", speakingAnimation: speakingAnimation(req.body?.speakingAnimation), nameFont: nameFont(req.body?.nameFont),
+    nameSize: boundedNumber(req.body?.nameSize, 0.5, 3, 1), nameBackground: nameBackground(req.body?.nameBackground), nameBackgroundColor: color(req.body?.nameBackgroundColor, "#090305"), presence: { create: { source: "manual" } },
   }, update: {
-    name: cleanText(req.body?.name, current?.name || id, 60), accent: /^#[0-9a-f]{6}$/i.test(req.body?.accent) ? req.body.accent : current?.accent || "#d0193c",
+    name: cleanText(req.body?.name, current?.name || id, 60), accent: color(req.body?.accent, current?.accent || "#d0193c"),
     pinned: req.body?.pinned === undefined ? current?.pinned ?? true : Boolean(req.body.pinned), speakingAnimation: req.body?.speakingAnimation === undefined ? speakingAnimation(current?.speakingAnimation) : speakingAnimation(req.body.speakingAnimation), nameFont: req.body?.nameFont === undefined ? nameFont(current?.nameFont) : nameFont(req.body.nameFont),
+    nameSize: req.body?.nameSize === undefined ? current?.nameSize ?? 1 : boundedNumber(req.body.nameSize, 0.5, 3, 1),
+    nameBackground: req.body?.nameBackground === undefined ? nameBackground(current?.nameBackground) : nameBackground(req.body.nameBackground),
+    nameBackgroundColor: req.body?.nameBackgroundColor === undefined ? color(current?.nameBackgroundColor, "#090305") : color(req.body.nameBackgroundColor, current?.nameBackgroundColor || "#090305"),
     useDiscordAvatar: req.body?.useDiscordAvatar === undefined ? current?.useDiscordAvatar ?? true : Boolean(req.body.useDiscordAvatar),
   } });
   await prisma.room.update({ where: { id: room.id }, data: { updatedAt: new Date() } }); await broadcast(room.id); res.json(player);

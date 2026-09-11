@@ -93,10 +93,14 @@ function avatarMarkup(player) {
   const x = clamp(player.positionX ?? 50, 0, 100);
   const y = clamp(player.positionY ?? 50, 0, 100);
   const size = clamp(player.displaySize || 1, 0.4, 2.5);
+  const nameSize = clamp(player.nameSize || 1, 0.5, 3);
+  const nameX = clamp(player.nameOffsetX || 0, -100, 100);
+  const nameY = clamp(player.nameOffsetY || 0, -100, 100);
   const layer = Math.round(clamp(player.displayLayer || 0, 0, 1000));
-  return `<article class="avatar font-${font} ${positioned ? "custom-position" : ""} ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)};--x:${x}%;--y:${y}%;--size:${size};--layer:${layer}">
-    ${image ? `<img class="avatar-img ${isWebcam ? "webcam-img" : ""}" src="${escapeHtml(image)}${isWebcam ? `?v=${Date.now()}` : ""}" ${isWebcam ? `data-webcam-src="${escapeHtml(image)}"` : ""} alt="${isWebcam ? `${escapeHtml(player.name)} webcam` : ""}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}
-    <div class="avatar-name">${escapeHtml(player.name)}</div>
+  const nameBackgroundClass = player.nameBackground === "none" ? " no-background" : "";
+  return `<article class="avatar font-${font} ${positioned ? "custom-position" : ""} ${isWebcam ? "webcam" : ""} ${player.speaking ? "speaking" : ""} animation-${animation}" data-player-id="${escapeHtml(player.id)}" style="--accent:${escapeHtml(player.accent)};--x:${x}%;--y:${y}%;--size:${size};--layer:${layer};--name-size:${nameSize};--name-x:${nameX}cqw;--name-y:${nameY}cqh;--name-bg:${escapeHtml(player.nameBackgroundColor || "#090305")}">
+    <div class="avatar-visual">${image ? `<img class="avatar-img ${isWebcam ? "webcam-img" : ""}" src="${escapeHtml(image)}${isWebcam ? `?v=${Date.now()}` : ""}" ${isWebcam ? `data-webcam-src="${escapeHtml(image)}"` : ""} alt="${isWebcam ? `${escapeHtml(player.name)} webcam` : ""}" />` : `<div class="avatar-fallback"><span>${isWebcam ? "CAMERA" : player.speaking ? "TALK" : "IDLE"}</span></div>`}</div>
+    <div class="avatar-name${nameBackgroundClass}" title="Drag to move the name">${escapeHtml(player.name)}</div>
     <button class="avatar-resize" type="button" aria-label="Resize ${escapeHtml(player.name)}" title="Drag to resize">↘</button>
   </article>`;
 }
@@ -382,7 +386,7 @@ function stopDashboardLive() {
 }
 
 function playerSignature(players = []) {
-  return players.map((player) => [player.id, player.mediaMode, player.idleImage || "", player.talkingImage || "", player.discordAvatar || "", player.useDiscordAvatar !== false].join(":")).join("|");
+  return players.map((player) => [player.id, player.mediaMode, player.idleImage || "", player.talkingImage || "", player.discordAvatar || "", player.useDiscordAvatar !== false, player.nameBackground || "solid"].join(":")).join("|");
 }
 
 function hasCustomPlacement(players = []) {
@@ -396,7 +400,13 @@ function applyPlayerState(avatar, player, includePlacement = true) {
   avatar.classList.remove(...nameFontValues.map((font) => `font-${font}`));
   avatar.classList.add(`font-${normalizeNameFont(player.nameFont)}`);
   avatar.style.setProperty("--accent", player.accent);
-  avatar.querySelector(".avatar-name").textContent = player.name;
+  avatar.style.setProperty("--name-size", clamp(player.nameSize || 1, 0.5, 3));
+  avatar.style.setProperty("--name-x", `${clamp(player.nameOffsetX || 0, -100, 100)}cqw`);
+  avatar.style.setProperty("--name-y", `${clamp(player.nameOffsetY || 0, -100, 100)}cqh`);
+  avatar.style.setProperty("--name-bg", player.nameBackgroundColor || "#090305");
+  const nameLabel = avatar.querySelector(".avatar-name");
+  nameLabel.textContent = player.name;
+  nameLabel.classList.toggle("no-background", player.nameBackground === "none");
   if (includePlacement && !avatar.classList.contains("dragging")) {
     const positioned = player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined;
     avatar.classList.toggle("custom-position", positioned);
@@ -432,7 +442,7 @@ function syncDashboardLive(data) {
     const current = session.players[index];
     const avatar = preview?.querySelector(`.avatar[data-player-id="${CSS.escape(current.id)}"]`);
     const draftPlacement = avatar?.classList.contains("dragging") ? {
-      positionX: current.positionX, positionY: current.positionY, displaySize: current.displaySize, displayLayer: current.displayLayer,
+      positionX: current.positionX, positionY: current.positionY, displaySize: current.displaySize, displayLayer: current.displayLayer, nameSize: current.nameSize, nameOffsetX: current.nameOffsetX, nameOffsetY: current.nameOffsetY,
     } : null;
     Object.assign(current, incoming, draftPlacement || {});
   });
@@ -467,6 +477,9 @@ const placementPayload = (players) => players.map((player) => ({
   y: clamp(player.positionY ?? 50, 0, 100),
   size: clamp(player.displaySize || 1, 0.4, 2.5),
   layer: Math.round(clamp(player.displayLayer || 0, 0, 1000)),
+  nameSize: clamp(player.nameSize || 1, 0.5, 3),
+  nameX: clamp(player.nameOffsetX || 0, -100, 100),
+  nameY: clamp(player.nameOffsetY || 0, -100, 100),
 }));
 
 async function savePlacements(players) {
@@ -494,6 +507,9 @@ function bindPlacementEditor() {
       player.positionX = rect ? clamp(((rect.left + rect.width / 2 - previewRect.left) / previewRect.width) * 100, 0, 100) : 50;
       player.positionY = rect ? clamp(((rect.top + rect.height / 2 - previewRect.top) / previewRect.height) * 100, 0, 100) : 50;
       player.displaySize = player.displaySize || 1;
+      player.nameSize = player.nameSize || 1;
+      player.nameOffsetX = player.nameOffsetX || 0;
+      player.nameOffsetY = player.nameOffsetY || 0;
       player.displayLayer = index;
     });
     selectedPlacementId = session.players[0]?.id || null;
@@ -509,7 +525,7 @@ function bindPlacementEditor() {
     resetButton.disabled = true;
     try {
       await api(`/api/sessions/${session.id}/placements`, { method: "PUT", body: JSON.stringify({ reset: true }) });
-      session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0 }));
+      session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0 }));
       placementEditing = false;
       selectedPlacementId = null;
       renderDashboard();
@@ -523,15 +539,19 @@ function bindPlacementEditor() {
   if (!placementEditing) return;
   const sizeInput = document.querySelector("#placement-size");
   const sizeOutput = document.querySelector("#placement-size-output");
+  const nameSizeInput = document.querySelector("#name-size");
+  const nameSizeOutput = document.querySelector("#name-size-output");
   const selectedName = document.querySelector("#selected-placement-name");
   const selectedPlayer = () => session.players.find((entry) => entry.id === selectedPlacementId) || session.players[0];
   const syncSizeControls = () => {
     const player = selectedPlayer();
-    if (!player || !sizeInput || !sizeOutput || !selectedName) return;
+    if (!player || !sizeInput || !sizeOutput || !nameSizeInput || !nameSizeOutput || !selectedName) return;
     selectedPlacementId = player.id;
     sizeInput.value = String(clamp(player.displaySize || 1, 0.4, 2.5));
     sizeOutput.textContent = `${Math.round(Number(sizeInput.value) * 100)}%`;
-    selectedName.textContent = `Resize ${player.name}`;
+    nameSizeInput.value = String(clamp(player.nameSize || 1, 0.5, 3));
+    nameSizeOutput.textContent = `${Math.round(Number(nameSizeInput.value) * 100)}%`;
+    selectedName.textContent = `Arrange ${player.name}`;
     preview.querySelectorAll(".avatar").forEach((entry) => entry.classList.toggle("placement-selected", entry.dataset.playerId === player.id));
   };
   const setSelectedSize = (size, save = false) => {
@@ -548,6 +568,20 @@ function bindPlacementEditor() {
   }
   document.querySelector("#placement-smaller")?.addEventListener("click", () => setSelectedSize((selectedPlayer()?.displaySize || 1) - 0.1, true));
   document.querySelector("#placement-larger")?.addEventListener("click", () => setSelectedSize((selectedPlayer()?.displaySize || 1) + 0.1, true));
+  const setSelectedNameSize = (size, save = false) => {
+    const player = selectedPlayer();
+    if (!player) return;
+    player.nameSize = clamp(size, 0.5, 3);
+    preview.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`)?.style.setProperty("--name-size", player.nameSize);
+    syncSizeControls();
+    if (save) savePlacements([player]).catch((error) => toast(error.message));
+  };
+  if (nameSizeInput) {
+    nameSizeInput.oninput = () => setSelectedNameSize(nameSizeInput.value);
+    nameSizeInput.onchange = () => setSelectedNameSize(nameSizeInput.value, true);
+  }
+  document.querySelector("#name-smaller")?.addEventListener("click", () => setSelectedNameSize((selectedPlayer()?.nameSize || 1) - 0.1, true));
+  document.querySelector("#name-larger")?.addEventListener("click", () => setSelectedNameSize((selectedPlayer()?.nameSize || 1) + 0.1, true));
   preview.querySelectorAll(".avatar").forEach((avatar) => {
     const player = session.players.find((entry) => entry.id === avatar.dataset.playerId);
     if (!player) return;
@@ -556,19 +590,25 @@ function bindPlacementEditor() {
       if (event.button !== 0) return;
       event.preventDefault();
       const resizing = Boolean(event.target.closest(".avatar-resize"));
+      const movingName = Boolean(event.target.closest(".avatar-name"));
       const previewRect = preview.getBoundingClientRect();
       const startX = event.clientX;
       const startY = event.clientY;
       const initialX = clamp(player.positionX ?? 50, 0, 100);
       const initialY = clamp(player.positionY ?? 50, 0, 100);
       const initialSize = clamp(player.displaySize || 1, 0.4, 2.5);
+      const initialNameX = clamp(player.nameOffsetX || 0, -100, 100);
+      const initialNameY = clamp(player.nameOffsetY || 0, -100, 100);
       selectedPlacementId = player.id;
       syncSizeControls();
       player.displayLayer = Math.min(1000, Math.max(0, ...session.players.map((entry) => entry.displayLayer || 0)) + 1);
       avatar.classList.add("dragging", "custom-position");
       avatar.setPointerCapture(event.pointerId);
       const move = (moveEvent) => {
-        if (resizing) {
+        if (movingName) {
+          player.nameOffsetX = clamp(initialNameX + ((moveEvent.clientX - startX) / previewRect.width) * 100, -100, 100);
+          player.nameOffsetY = clamp(initialNameY + ((moveEvent.clientY - startY) / previewRect.height) * 100, -100, 100);
+        } else if (resizing) {
           const resizeDistance = ((moveEvent.clientX - startX) + (moveEvent.clientY - startY)) / 2;
           player.displaySize = clamp(initialSize + resizeDistance / 140, 0.4, 2.5);
           if (sizeInput) sizeInput.value = String(player.displaySize);
@@ -580,6 +620,8 @@ function bindPlacementEditor() {
         avatar.style.setProperty("--x", `${player.positionX}%`);
         avatar.style.setProperty("--y", `${player.positionY}%`);
         avatar.style.setProperty("--size", player.displaySize);
+        avatar.style.setProperty("--name-x", `${player.nameOffsetX || 0}cqw`);
+        avatar.style.setProperty("--name-y", `${player.nameOffsetY || 0}cqh`);
         avatar.style.setProperty("--layer", player.displayLayer);
       };
       const finish = () => {
@@ -612,7 +654,7 @@ async function chooseAutomaticLayout(layout) {
   const secrets = { joinToken: session.joinToken, overlayToken: session.overlayToken };
   session = await api(`/api/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ layout }) });
   Object.assign(session, secrets);
-  session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0 }));
+  session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0 }));
   placementEditing = false;
   selectedPlacementId = null;
   renderDashboard();
@@ -645,7 +687,7 @@ function renderDashboard() {
         <section class="card">
           <div class="card-head"><div><h2>Live preview</h2><p class="subtle">This now follows the same live feed as OBS.</p></div><span id="live-count-badge" class="badge ${session.onlineCount ? "live" : ""}">${session.onlineCount ? `${session.onlineCount} ONLINE` : "PREVIEW"}</span></div>
           <div class="placement-toolbar"><button id="edit-placement" class="btn ${placementEditing ? "primary" : "ghost"}" type="button">${placementEditing ? "Done arranging" : "Arrange players"}</button><button id="reset-placement" class="btn ghost" type="button" ${customArrangement ? "" : "hidden"}>Reset arrangement</button><span>${placementEditing ? "Drag players to move them. Select one and use the size controls." : "Positions are shared with the OBS browser source."}</span></div>
-          ${placementEditing && players.length ? `<div class="placement-size-controls"><strong id="selected-placement-name">Resize player</strong><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div>` : ""}
+          ${placementEditing && players.length ? `<div class="placement-controls"><strong id="selected-placement-name">Arrange player</strong><div class="placement-control-row"><span>Avatar size</span><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div><div class="placement-control-row"><span>Name size</span><button id="name-smaller" class="btn compact" type="button" aria-label="Make selected name smaller">Smaller</button><input id="name-size" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="Selected name size" /><output id="name-size-output">100%</output><button id="name-larger" class="btn compact" type="button" aria-label="Make selected name larger">Larger</button></div><p>Drag the character to move it. Drag the name label to position it independently.</p></div>` : ""}
           <div id="live-preview" class="preview ${escapeHtml(session.background)} ${escapeHtml(session.layout)} ${customArrangement ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
           <div class="game-strip"><span>Works with</span><strong>R.E.P.O.</strong><strong>PEAK</strong><strong>Meccha Chameleon</strong><strong>Any game</strong></div>
         </section>
@@ -696,7 +738,7 @@ function renderDashboard() {
               <div class="discord-config-actions">${discordConnection?.activityUrl ? `<a class="btn discord-btn" href="${escapeHtml(discordConnection.activityUrl)}" target="_blank" rel="noopener">Open PNGCalls in Discord</a>` : ""}</div>
               <div class="activity-artwork">
                 <img class="activity-artwork-icon" src="/assets/discord/pngcalls-activity-icon.gif" alt="Animated PNGCalls Activity icon" />
-                <div><strong>Discord artwork</strong><p class="subtle">Use the animated Zeph GIF as the application image and the studio wall as the Activity banner.</p><div class="discord-config-actions"><a class="btn ghost" href="/assets/discord/pngcalls-activity-icon.gif" download>Download image GIF</a><a class="btn ghost" href="/assets/discord/pngcalls-activity-icon.png" download>Download image PNG</a><a class="btn ghost" href="/assets/discord/pngcalls-activity-banner.png" download>Download wall banner</a></div></div>
+                <div><strong>Discord artwork requires a manual portal upload</strong><p class="subtle">Upload the Zeph PNG under General Information as the App Icon. Upload the wall banner under Activities as the Activity Cover Image. Discord does not copy these files from PNGCalls automatically.</p><div class="discord-config-actions"><a class="btn ghost" href="/assets/discord/pngcalls-activity-icon.gif" download>Download image GIF</a><a class="btn ghost" href="/assets/discord/pngcalls-activity-icon.png" download>Download App Icon PNG</a><a class="btn ghost" href="/assets/discord/pngcalls-activity-banner.png" download>Download Activity Cover</a></div></div>
               </div>
               <details><summary>Windows EXE fallback</summary><p class="subtle">Use this only while the Activity is awaiting Discord approval or for troubleshooting. Pairing is saved after the first setup.</p><div class="discord-config-actions"><a class="btn ghost" href="${escapeHtml(discordConnection?.companionDownloadUrl || session.companion?.downloadUrl || "#")}" download>Download Windows EXE</a>${discordConnection?.connected && !discordConnection.connected.rpcReady ? `<a class="btn" href="/auth/discord/companion">Authorize EXE fallback</a>` : ""}${discordConnection?.connected?.rpcReady ? `<button id="pair-discord-companion" class="btn" type="button">${session.companion?.paired ? "Replace saved pairing" : "Create one-time pairing"}</button>` : ""}${session.companion?.paired ? `<button id="remove-discord-companion" class="btn ghost danger" type="button">Forget companion</button>` : ""}</div></details>
             </div>
@@ -813,6 +855,8 @@ function showPlayerModal(player = null) {
     <h2>${player ? "Edit player" : "Add player"}</h2>
     <div class="field"><label>Stable player ID</label><input name="id" class="input mono" required value="${escapeHtml(player?.id || "")}" ${player ? "readonly" : ""} placeholder="player-name" /></div>
     <div class="field"><label>Display name</label><input name="name" class="input" required value="${escapeHtml(player?.name || "")}" placeholder="Player name" /></div>
+    <div class="field"><label>Name font</label><select name="nameFont" class="input font-choice font-${normalizeNameFont(player?.nameFont)}">${nameFontOptions(normalizeNameFont(player?.nameFont))}</select></div>
+    <div class="two-col"><div class="field"><label>Name background</label><select name="nameBackground" class="input"><option value="solid" ${player?.nameBackground !== "none" ? "selected" : ""}>Background color</option><option value="none" ${player?.nameBackground === "none" ? "selected" : ""}>No background</option></select></div><div class="field"><label>Background color</label><input name="nameBackgroundColor" class="input" type="color" value="${escapeHtml(player?.nameBackgroundColor || "#090305")}" /></div></div>
     <div class="two-col"><div class="field"><label>Idle image</label><input name="idle" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div><div class="field"><label>Talking image</label><input name="talking" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
     ${player?.source === "discord" ? `<label class="check-row"><input name="useDiscordAvatar" type="checkbox" ${player.useDiscordAvatar !== false ? "checked" : ""} /><span>Use this person's Discord profile picture when no custom image is set</span></label>` : ""}
     <div class="field"><label>Speaking accent</label><input name="accent" class="input" type="color" value="${escapeHtml(player?.accent || "#d0193c")}" /><span class="hint">Used for the name outline, webcam border, and glow while speaking.</span></div>
@@ -831,7 +875,7 @@ function showPlayerModal(player = null) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const id = form.get("id");
-    await api(`/api/sessions/${session.id}/players/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ name: form.get("name"), accent: form.get("accent"), pinned: true, speakingAnimation: form.get("animateSpeaking") ? form.get("speakingAnimation") : "none", ...(player?.source === "discord" ? { useDiscordAvatar: Boolean(form.get("useDiscordAvatar")) } : {}) }) });
+    await api(`/api/sessions/${session.id}/players/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ name: form.get("name"), nameFont: form.get("nameFont"), nameBackground: form.get("nameBackground"), nameBackgroundColor: form.get("nameBackgroundColor"), accent: form.get("accent"), pinned: true, speakingAnimation: form.get("animateSpeaking") ? form.get("speakingAnimation") : "none", ...(player?.source === "discord" ? { useDiscordAvatar: Boolean(form.get("useDiscordAvatar")) } : {}) }) });
     if (form.get("idle")?.size || form.get("talking")?.size) {
       const images = new FormData();
       if (form.get("idle")?.size) images.append("idle", form.get("idle"));

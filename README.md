@@ -155,6 +155,8 @@ In the Discord Developer Portal:
 6. Add the host Discord account as an application tester while the app is in development.
 7. Request Discord approval for `rpc.voice.read` before distributing the Activity publicly.
 
+Discord does not let PNGCalls change Developer Portal artwork through the client ID or client secret. Download the prepared files from the Discord artwork section in PNGCalls Settings and upload them to the two portal fields manually.
+
 Start or join a Discord call, open the App Launcher in that call, and launch PNGCalls. The Activity automatically authenticates the linked host Discord account and reconnects to the last selected PNGCalls room. Keep the small Activity open during the call. It forwards `SPEAKING_START`, `SPEAKING_STOP`, and voice-state changes to the existing browser overlay over WebSockets. It never transmits call audio.
 
 Discord limits `rpc.voice.read` to approved applications and configured application testers. This restriction belongs to Discord and cannot be bypassed by PNGCalls. The Activity can run in direct messages, group DMs, and server channels, but it cannot continue reading a call after the Activity is closed.

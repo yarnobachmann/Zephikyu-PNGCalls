@@ -54,6 +54,11 @@ model Player {
   mediaMode         String    @default("png")
   speakingAnimation String    @default("none")
   nameFont          String    @default("rounded")
+  nameSize          Float     @default(1)
+  nameOffsetX       Float     @default(0)
+  nameOffsetY       Float     @default(0)
+  nameBackground    String    @default("solid")
+  nameBackgroundColor String  @default("#090305")
   positionX         Float?
   positionY         Float?
   displaySize       Float     @default(1)

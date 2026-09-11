@@ -163,6 +163,16 @@ try {
   assert.equal(activityOverlay.players.find((player) => player.source === "discord").useDiscordAvatar, true);
   assert.equal(activityOverlay.companion.channelName, "Activity direct call");
   assert.equal(activityOverlay.companion.mode, "activity");
+  const styledDiscordPlayer = activityOverlay.players.find((player) => player.source === "discord");
+  const styleResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/players/${styledDiscordPlayer.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
+    body: JSON.stringify({ name: styledDiscordPlayer.name, nameFont: "comic", nameBackground: "none", nameBackgroundColor: "#123456", useDiscordAvatar: true }),
+  });
+  assert.equal(styleResponse.status, 200);
+  const styledOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
+  assert.equal(styledOverlay.players.find((player) => player.id === styledDiscordPlayer.id).nameFont, "comic");
+  assert.equal(styledOverlay.players.find((player) => player.id === styledDiscordPlayer.id).nameBackground, "none");
 
   const joinResponse = await fetch(`${baseUrl}/api/join/${room.sessionId}/${room.joinToken}`, {
     method: "POST",
@@ -179,7 +189,7 @@ try {
   const placementResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/placements`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
-    body: JSON.stringify({ players: [{ id: participant.playerId, x: 21, y: 64, size: 1.4, layer: 3 }] }),
+    body: JSON.stringify({ players: [{ id: participant.playerId, x: 21, y: 64, size: 1.4, layer: 3, nameSize: 1.65, nameX: -8, nameY: 12 }] }),
   });
   assert.equal(placementResponse.status, 200);
   const placedRoom = await placementResponse.json();
@@ -188,11 +198,17 @@ try {
   assert.equal(placedPlayer.positionY, 64);
   assert.equal(placedPlayer.displaySize, 1.4);
   assert.equal(placedPlayer.displayLayer, 3);
+  assert.equal(placedPlayer.nameSize, 1.65);
+  assert.equal(placedPlayer.nameOffsetX, -8);
+  assert.equal(placedPlayer.nameOffsetY, 12);
   const placedOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
   const placedOverlayPlayer = placedOverlay.players.find((player) => player.id === participant.playerId);
   assert.equal(placedOverlayPlayer.positionX, 21);
   assert.equal(placedOverlayPlayer.positionY, 64);
   assert.equal(placedOverlayPlayer.displaySize, 1.4);
+  assert.equal(placedOverlayPlayer.nameSize, 1.65);
+  assert.equal(placedOverlayPlayer.nameOffsetX, -8);
+  assert.equal(placedOverlayPlayer.nameOffsetY, 12);
 
   const automaticResetResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/placements`, {
     method: "PUT",
