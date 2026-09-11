@@ -208,14 +208,15 @@ function toast(message) {
 }
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
-const tutorialRevision = "2";
+const tutorialRevision = "3";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
     ["input[name='name']", "Enter your display name. PNGCalls remembers it and the other setup choices on this device."],
     ["#name-font", "Choose how your display name should look in the room and OBS. This choice is remembered too."],
     ["#join-name-position", "Place your name on, below, above, left, or right of your avatar. The host can still fine tune it later."],
     ["#media-mode", "Choose PNG images or Webcam. Selecting Webcam hides the PNG uploads and opens the camera setup."],
-    ["#png-fields", "Choose separate idle and talking images. Both are preloaded and crossfade smoothly when you speak."],
+    ["#png-fields", "Choose separate idle and talking images. Both are fitted into the same frame, preloaded, and crossfade smoothly when you speak."],
+    ["#find-microphones", "Find microphones, then choose the exact input PNGCalls should use. Your choice is remembered on this device."],
     ["#find-cameras", "Find cameras lists every detected source. If one is busy, choose a different camera from the list."],
     ["input[name='accent']", "Pick the accent used for your speaking outline, camera border, and glow."],
     ["#animate-speaking", "Turn on a speaking animation, then choose the style beside it."],
@@ -1038,6 +1039,10 @@ async function runJoin() {
           <div class="field"><label for="join-name-position">Name position</label><select id="join-name-position" class="input" name="namePosition">${namePositionOptions(draft.namePosition || "below", false)}</select><span class="hint">The host can fine tune the exact position later.</span></div>
           <div class="field"><label>Appearance</label><select id="media-mode" class="input" name="mediaMode"><option value="png" ${draft.mediaMode !== "webcam" ? "selected" : ""}>PNG images</option><option value="webcam" ${draft.mediaMode === "webcam" ? "selected" : ""}>Webcam</option></select></div>
           <div id="png-fields" class="two-col"><div class="field"><label>Idle image</label><input class="input" name="idle" type="file" required accept="image/png,image/jpeg,image/webp,image/gif" /></div><div class="field"><label>Talking image</label><input class="input" name="talking" type="file" required accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
+          <section id="microphone-fields" class="camera-picker">
+            <div class="field"><label for="microphone-device">Microphone source</label><div class="camera-actions"><select id="microphone-device" class="input" name="microphoneDeviceId"><option value="${escapeHtml(draft.microphoneDeviceId || "")}">${draft.microphoneDeviceId ? "Saved microphone" : "System default microphone"}</option></select><button id="find-microphones" class="btn ghost" type="button">Find microphones</button></div></div>
+            <p id="microphone-status" class="hint">Use system default, or find and select a specific microphone.</p>
+          </section>
           <section id="camera-fields" class="camera-picker" hidden>
             <div class="field"><label for="camera-device">Camera source</label><div class="camera-actions"><select id="camera-device" class="input" name="cameraDeviceId" disabled><option value="">Find cameras first</option></select><button id="find-cameras" class="btn ghost" type="button">Find cameras</button></div></div>
             <div class="field"><label for="camera-fps">Frame rate</label><select id="camera-fps" class="input" name="cameraFps"><option value="30" ${draft.cameraFps === 60 ? "" : "selected"}>30 FPS</option><option value="60" ${draft.cameraFps === 60 ? "selected" : ""}>60 FPS</option></select></div>
@@ -1087,6 +1092,7 @@ async function runJoin() {
         mediaMode: form.get("mediaMode") === "webcam" ? "webcam" : "png",
         accent: String(form.get("accent") || "#d0193c"),
         speakingAnimation: form.get("animateSpeaking") ? String(form.get("speakingAnimation") || "bounce") : "none",
+        microphoneDeviceId: String(form.get("microphoneDeviceId") || ""),
         cameraDeviceId: String(form.get("cameraDeviceId") || draft.cameraDeviceId || ""),
         cameraFps: form.get("cameraFps") === "60" ? 60 : 30,
         crop: normalizeCrop({ zoom: form.get("cropZoom"), x: form.get("cropX"), y: form.get("cropY") }),
@@ -1099,11 +1105,30 @@ async function runJoin() {
     joinForm.addEventListener("input", saveDraft);
     joinForm.addEventListener("change", saveDraft);
     const cameraSelect = document.querySelector("#camera-device");
+    const microphoneSelect = document.querySelector("#microphone-device");
+    const microphoneStatus = document.querySelector("#microphone-status");
     const cameraStatus = document.querySelector("#camera-status");
     const cameraPreview = document.querySelector("#camera-test-preview");
     const cropPreview = document.querySelector("#crop-test-preview");
     const cropControls = document.querySelector("#crop-controls");
     const currentCrop = bindCropControls(draft.crop || {});
+    document.querySelector("#find-microphones").onclick = async () => {
+      microphoneStatus.textContent = "Requesting microphone access...";
+      let permissionStream;
+      try {
+        permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const activeDevice = permissionStream.getAudioTracks()[0]?.getSettings().deviceId || "";
+        const devices = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audioinput");
+        const preferredDevice = devices.some((device) => device.deviceId === draft.microphoneDeviceId) ? draft.microphoneDeviceId : activeDevice;
+        microphoneSelect.innerHTML = `<option value="">System default microphone</option>${devices.map((device, index) => `<option value="${escapeHtml(device.deviceId)}" ${device.deviceId === preferredDevice ? "selected" : ""}>${escapeHtml(device.label || `Microphone ${index + 1}`)}</option>`).join("")}`;
+        microphoneStatus.textContent = devices.length ? `${devices.length} microphone${devices.length === 1 ? "" : "s"} found. Choose the input you want to use.` : "No microphones were found.";
+        saveDraft();
+      } catch (error) {
+        microphoneStatus.textContent = `Microphone access failed: ${error.message}`;
+      } finally {
+        permissionStream?.getTracks().forEach((track) => track.stop());
+      }
+    };
     const renderCropPreview = () => {
       drawCroppedFrame(cameraPreview, cropPreview, currentCrop());
       cropPreviewAnimation = requestAnimationFrame(renderCropPreview);
@@ -1176,6 +1201,7 @@ async function runJoin() {
           accent: form.get("accent"),
           speakingAnimation,
           mediaMode,
+          microphoneDeviceId: form.get("microphoneDeviceId") || "",
           cameraDeviceId: mediaMode === "webcam" ? form.get("cameraDeviceId") || "" : "",
           cameraFps: mediaMode === "webcam" && form.get("cameraFps") === "60" ? 60 : 30,
           crop: mediaMode === "webcam" ? normalizeCrop({ zoom: form.get("cropZoom"), x: form.get("cropX"), y: form.get("cropY") }) : normalizeCrop(),
@@ -1203,6 +1229,7 @@ async function runJoin() {
     const resumed = await api(`/api/join/${id}/${joinToken}`, { method: "POST", body: JSON.stringify({ playerId: identity.playerId }) });
     identity.mediaMode = resumed.player?.mediaMode || identity.mediaMode || "png";
     identity.nameFont = normalizeNameFont(resumed.player?.nameFont || identity.nameFont);
+    identity.microphoneDeviceId = String(identity.microphoneDeviceId || "");
     identity.cameraFps = identity.cameraFps === 60 ? 60 : 30;
     identity.crop = normalizeCrop(identity.crop);
     localStorage.setItem(storageKey, JSON.stringify(identity));
@@ -1251,23 +1278,28 @@ async function startMic(id, joinToken, identity, storageKey) {
 
   const requestedFps = identity.cameraFps === 60 ? 60 : 30;
   let stream;
-  try {
+  const requestMedia = () => {
     const camera = { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: requestedFps, max: requestedFps } };
     if (identity.cameraDeviceId) camera.deviceId = { exact: identity.cameraDeviceId };
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    if (identity.microphoneDeviceId) audio.deviceId = { exact: identity.microphoneDeviceId };
+    return navigator.mediaDevices.getUserMedia({
+      audio,
       video: useWebcam ? camera : false,
     });
+  };
+  try {
+    stream = await requestMedia();
   } catch (error) {
-    if (useWebcam && identity.cameraDeviceId && ["OverconstrainedError", "NotFoundError"].includes(error.name)) {
+    if (identity.microphoneDeviceId && ["OverconstrainedError", "NotFoundError"].includes(error.name)) {
+      identity.microphoneDeviceId = "";
+      localStorage.setItem(storageKey, JSON.stringify(identity));
+      try { stream = await requestMedia(); } catch {}
+    }
+    if (!stream && useWebcam && identity.cameraDeviceId && ["OverconstrainedError", "NotFoundError"].includes(error.name)) {
       identity.cameraDeviceId = "";
       localStorage.setItem(storageKey, JSON.stringify(identity));
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-          video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: requestedFps, max: requestedFps } },
-        });
-      } catch {}
+      try { stream = await requestMedia(); } catch {}
     }
   }
   if (!stream) {
