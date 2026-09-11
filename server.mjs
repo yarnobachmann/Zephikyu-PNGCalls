@@ -55,6 +55,7 @@ const discordAvatarUrl = (discordId, avatarHash) => {
 };
 const bearer = (req) => String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
 const guestCookieName = (roomId) => `zephikyu_guest_${cleanId(roomId)}`;
+const guestCookieMaxAge = 60 * 60 * 24 * 365;
 const safeEqual = (left, right) => {
   const a = Buffer.from(String(left));
   const b = Buffer.from(String(right));
@@ -583,12 +584,10 @@ app.post("/api/sessions/:sessionId/reset-join", requireHost, requireCsrf, async 
   const guestPlayers = room.players.filter((player) => player.presence?.source === "browser");
   const nextJoinToken = token(32);
   await prisma.$transaction([
-    prisma.player.deleteMany({ where: { id: { in: guestPlayers.map((player) => player.id) } } }),
+    prisma.presence.updateMany({ where: { playerId: { in: guestPlayers.map((player) => player.id) } }, data: { present: false, speaking: false, muted: false, lastSeen: new Date() } }),
     prisma.room.update({ where: { id: room.id }, data: { joinToken: nextJoinToken, updatedAt: new Date() } }),
   ]);
   for (const player of guestPlayers) {
-    removeUploadedFile(player.idleImage);
-    removeUploadedFile(player.talkingImage);
     removeWebcamFile(room.id, player.id);
     const key = webcamKey(room.id, player.id);
     webcamPublishers.get(key)?.close(1000, "Player link reset");
@@ -705,7 +704,7 @@ app.post("/api/join/:sessionId/:joinToken", joinLimit, async (req, res) => {
   const cookieCredential = parseCookies(req)[guestCookieName(room.id)] || "";
   const [cookiePlayerId, cookieKey] = cookieCredential.split(".", 2);
   if (existingPlayer?.joinKey && cookiePlayerId === existingPlayer.id && safeEqual(cookieKey, existingPlayer.joinKey)) {
-    setCookie(res, guestCookieName(room.id), `${existingPlayer.id}.${existingPlayer.joinKey}`, 60 * 60 * 12, cookieSecure(req), true);
+    setCookie(res, guestCookieName(room.id), `${existingPlayer.id}.${existingPlayer.joinKey}`, guestCookieMaxAge, cookieSecure(req), true);
     return res.json({ playerId: existingPlayer.id, sessionName: room.name, player: existingPlayer });
   }
   const player = await prisma.player.create({ data: {
@@ -714,7 +713,7 @@ app.post("/api/join/:sessionId/:joinToken", joinLimit, async (req, res) => {
     nameOffsetX: boundedNumber(req.body?.nameOffsetX, -100, 100, 0), nameOffsetY: boundedNumber(req.body?.nameOffsetY, -100, 100, 8), presence: { create: { source: "browser" } },
   } });
   await prisma.room.update({ where: { id: room.id }, data: { updatedAt: new Date() } }); await audit(req, "guest.join", "success", room.id, "guest"); await broadcast(room.id);
-  setCookie(res, guestCookieName(room.id), `${player.id}.${player.joinKey}`, 60 * 60 * 12, cookieSecure(req), true);
+  setCookie(res, guestCookieName(room.id), `${player.id}.${player.joinKey}`, guestCookieMaxAge, cookieSecure(req), true);
   res.status(201).json({ playerId: player.id, sessionName: room.name, player });
 });
 async function guestGuard(req, res, next) {

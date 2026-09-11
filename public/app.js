@@ -208,7 +208,7 @@ function toast(message) {
 }
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
-const tutorialRevision = "5";
+const tutorialRevision = "6";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
     ["input[name='name']", "Enter your display name. PNGCalls remembers it and the other setup choices on this device."],
@@ -220,14 +220,14 @@ function tutorialSteps() {
     ["#find-cameras", "Find cameras lists every detected source. If one is busy, choose a different camera from the list."],
     ["input[name='accent']", "Pick the accent used for your speaking outline, camera border, and glow."],
     ["#animate-speaking", "Turn on a speaking animation, then choose the style beside it."],
-    ["#join-form button[type='submit']", "Join when everything looks right. Your non-file choices are saved automatically for your next visit."],
+    ["#join-form button[type='submit']", "Join when everything looks right. PNGCalls keeps this player profile, including uploaded images, so it can be restored on a future invitation from this browser."],
   ];
   if (isJoin) return [
     ["#guest-live-preview", "This is how you appear in the overlay. Speak to test the talking image, accent, name, and animation live."],
     ["#camera-output-preview", "This is the exact camera crop sent to the overlay."],
     ["#crop-controls", "Adjust zoom and position here. Changes are saved on this device."],
     [".meter", "The meter shows microphone activity. Your speaking state changes automatically."],
-    ["#leave-room", "Use this to leave the current room. Your setup choices remain available if you join again."],
+    ["#leave-room", "Forget this room disconnects this browser from the saved player profile. Use it only when you want to set up again from scratch."],
   ];
   if (document.querySelector("#auth-form")) return [];
   if (document.querySelector("#create-form")) return [
@@ -236,7 +236,7 @@ function tutorialSteps() {
   ];
   return [
     ["#copy-join", "Copy this invitation link and send it to every player who should appear."],
-    ["[data-reset-player-link]", "Reset the invitation between streams without changing your private OBS browser-source link."],
+    ["[data-reset-player-link]", "Reset the invitation between streams without changing OBS. Current players disconnect, but their saved names, styling, and uploaded PNGs return when they join the new invitation from the same browser."],
     ["#copy-overlay", "Copy this private link into an OBS Browser Source. Speaking changes use the same direct live connection as this preview."],
     ["#edit-placement", "Open Arrange players to drag and resize avatars and names. Select a PNGTuber to choose whether it fades while idle, and use the name and snapping controls for precise placement."],
     ["[data-view='players']", "The player room shows everyone who joined. Edit a player to change images, font, name background, accent, and profile-picture fallback."],
