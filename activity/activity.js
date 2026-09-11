@@ -109,7 +109,7 @@ function connectRoom() {
     setStatus("Call detection is live", "Checking the current call participants...");
     sendSnapshot();
     heartbeat = setInterval(() => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "heartbeat" }));
+      sendSnapshot();
     }, 5000);
   });
   socket.addEventListener("message", (event) => {

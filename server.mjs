@@ -210,13 +210,18 @@ async function getRoom(req, res) {
 
 function publicRoom(room) {
   const cutoff = Date.now() - 7000;
-  const active = room.players.filter((player) => player.presence?.present !== false && player.presence?.lastSeen?.getTime() >= cutoff);
+  const discordConnected = Boolean(room.companionLastSeen && room.companionLastSeen.getTime() >= Date.now() - 15_000);
+  const active = room.players.filter((player) => {
+    if (player.presence?.present === false) return false;
+    if (player.presence?.source === "discord") return discordConnected;
+    return player.presence?.lastSeen?.getTime() >= cutoff;
+  });
   const activeIds = new Set(active.map((player) => player.id));
   return {
     id: room.id, name: room.name, layout: room.layout, background: room.background,
     companion: {
       paired: Boolean(room.companionTokenHash),
-      online: Boolean(room.companionLastSeen && room.companionLastSeen.getTime() >= Date.now() - 15_000),
+      online: discordConnected,
       lastSeen: room.companionLastSeen?.getTime() || null,
       channelId: room.discordChannelId || null,
       channelName: room.discordChannelName || null,
@@ -619,13 +624,16 @@ app.put("/api/sessions/:sessionId/players/:playerId", requireHost, requireCsrf, 
   const player = await prisma.player.upsert({ where: { id }, create: {
     id, roomId: room.id, name: cleanText(req.body?.name, id, 60), accent: color(req.body?.accent, "#d0193c"),
     pinned: req.body?.pinned === undefined ? true : Boolean(req.body.pinned), mediaMode: "png", speakingAnimation: speakingAnimation(req.body?.speakingAnimation), nameFont: nameFont(req.body?.nameFont),
-    nameSize: boundedNumber(req.body?.nameSize, 0.5, 3, 1), nameBackground: nameBackground(req.body?.nameBackground), nameBackgroundColor: color(req.body?.nameBackgroundColor, "#090305"), presence: { create: { source: "manual" } },
+    nameSize: boundedNumber(req.body?.nameSize, 0.5, 3, 1), nameOffsetX: boundedNumber(req.body?.nameOffsetX, -100, 100, 0), nameOffsetY: boundedNumber(req.body?.nameOffsetY, -100, 100, 0),
+    nameBackground: nameBackground(req.body?.nameBackground), nameBackgroundColor: color(req.body?.nameBackgroundColor, "#090305"), presence: { create: { source: "manual" } },
   }, update: {
     name: cleanText(req.body?.name, current?.name || id, 60), accent: color(req.body?.accent, current?.accent || "#d0193c"),
     pinned: req.body?.pinned === undefined ? current?.pinned ?? true : Boolean(req.body.pinned), speakingAnimation: req.body?.speakingAnimation === undefined ? speakingAnimation(current?.speakingAnimation) : speakingAnimation(req.body.speakingAnimation), nameFont: req.body?.nameFont === undefined ? nameFont(current?.nameFont) : nameFont(req.body.nameFont),
     nameSize: req.body?.nameSize === undefined ? current?.nameSize ?? 1 : boundedNumber(req.body.nameSize, 0.5, 3, 1),
     nameBackground: req.body?.nameBackground === undefined ? nameBackground(current?.nameBackground) : nameBackground(req.body.nameBackground),
     nameBackgroundColor: req.body?.nameBackgroundColor === undefined ? color(current?.nameBackgroundColor, "#090305") : color(req.body.nameBackgroundColor, current?.nameBackgroundColor || "#090305"),
+    nameOffsetX: req.body?.nameOffsetX === undefined ? current?.nameOffsetX ?? 0 : boundedNumber(req.body.nameOffsetX, -100, 100, 0),
+    nameOffsetY: req.body?.nameOffsetY === undefined ? current?.nameOffsetY ?? 0 : boundedNumber(req.body.nameOffsetY, -100, 100, 0),
     useDiscordAvatar: req.body?.useDiscordAvatar === undefined ? current?.useDiscordAvatar ?? true : Boolean(req.body.useDiscordAvatar),
   } });
   await prisma.room.update({ where: { id: room.id }, data: { updatedAt: new Date() } }); await broadcast(room.id); res.json(player);

@@ -85,6 +85,8 @@ h1 { margin: 5px 0 0; font-family: "Arial Black", "Trebuchet MS", sans-serif; fo
 .placement-control-row { display: grid; grid-template-columns: 90px auto minmax(150px, 1fr) 58px auto; gap: 10px; align-items: center; }
 .placement-control-row input[type="range"] { width: 100%; accent-color: var(--acid); cursor: ew-resize; }
 .placement-control-row output { color: var(--muted); font: 700 .78rem ui-monospace, "Cascadia Mono", monospace; text-align: right; }
+.placement-name-position { display: grid; grid-template-columns: 90px minmax(180px, 320px); gap: 10px; align-items: center; }
+.placement-name-position label { color: var(--muted); font-size: .82rem; }
 .avatar-resize { display: none; }
 .preview.placement-editing { outline: 2px dashed #d0193c; outline-offset: 4px; }
 .preview.placement-editing .avatar { cursor: grab; touch-action: none; user-select: none; }

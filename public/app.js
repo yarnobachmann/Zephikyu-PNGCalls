@@ -24,6 +24,14 @@ const nameFontOptions = (selected = "rounded") => [
   ["classic", "Classic serif"],
   ["bold", "Big and bold"],
 ].map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
+const namePositionPresets = {
+  overlay: { x: 0, y: 0 },
+  below: { x: 0, y: 8 },
+  above: { x: 0, y: -68 },
+  left: { x: -14, y: -32 },
+  right: { x: 14, y: -32 },
+};
+const namePositionOptions = (includeCurrent = true) => `${includeCurrent ? '<option value="current">Keep current position</option>' : ""}<option value="overlay">On the image</option><option value="below">Below</option><option value="above">Above</option><option value="left">Left side</option><option value="right">Right side</option>`;
 function normalizeCrop(crop = {}) {
   return {
     zoom: clamp(crop.zoom || 1, 1, 8),
@@ -541,6 +549,7 @@ function bindPlacementEditor() {
   const sizeOutput = document.querySelector("#placement-size-output");
   const nameSizeInput = document.querySelector("#name-size");
   const nameSizeOutput = document.querySelector("#name-size-output");
+  const namePositionInput = document.querySelector("#name-position");
   const selectedName = document.querySelector("#selected-placement-name");
   const selectedPlayer = () => session.players.find((entry) => entry.id === selectedPlacementId) || session.players[0];
   const syncSizeControls = () => {
@@ -582,6 +591,18 @@ function bindPlacementEditor() {
   }
   document.querySelector("#name-smaller")?.addEventListener("click", () => setSelectedNameSize((selectedPlayer()?.nameSize || 1) - 0.1, true));
   document.querySelector("#name-larger")?.addEventListener("click", () => setSelectedNameSize((selectedPlayer()?.nameSize || 1) + 0.1, true));
+  if (namePositionInput) namePositionInput.onchange = () => {
+    const player = selectedPlayer();
+    const preset = namePositionPresets[namePositionInput.value];
+    if (!player || !preset) return;
+    player.nameOffsetX = preset.x;
+    player.nameOffsetY = preset.y;
+    const avatar = preview.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`);
+    avatar?.style.setProperty("--name-x", `${player.nameOffsetX}cqw`);
+    avatar?.style.setProperty("--name-y", `${player.nameOffsetY}cqh`);
+    namePositionInput.value = "current";
+    savePlacements([player]).catch((error) => toast(error.message));
+  };
   preview.querySelectorAll(".avatar").forEach((avatar) => {
     const player = session.players.find((entry) => entry.id === avatar.dataset.playerId);
     if (!player) return;
@@ -687,7 +708,7 @@ function renderDashboard() {
         <section class="card">
           <div class="card-head"><div><h2>Live preview</h2><p class="subtle">This now follows the same live feed as OBS.</p></div><span id="live-count-badge" class="badge ${session.onlineCount ? "live" : ""}">${session.onlineCount ? `${session.onlineCount} ONLINE` : "PREVIEW"}</span></div>
           <div class="placement-toolbar"><button id="edit-placement" class="btn ${placementEditing ? "primary" : "ghost"}" type="button">${placementEditing ? "Done arranging" : "Arrange players"}</button><button id="reset-placement" class="btn ghost" type="button" ${customArrangement ? "" : "hidden"}>Reset arrangement</button><span>${placementEditing ? "Drag players to move them. Select one and use the size controls." : "Positions are shared with the OBS browser source."}</span></div>
-          ${placementEditing && players.length ? `<div class="placement-controls"><strong id="selected-placement-name">Arrange player</strong><div class="placement-control-row"><span>Avatar size</span><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div><div class="placement-control-row"><span>Name size</span><button id="name-smaller" class="btn compact" type="button" aria-label="Make selected name smaller">Smaller</button><input id="name-size" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="Selected name size" /><output id="name-size-output">100%</output><button id="name-larger" class="btn compact" type="button" aria-label="Make selected name larger">Larger</button></div><p>Drag the character to move it. Drag the name label to position it independently.</p></div>` : ""}
+          ${placementEditing && players.length ? `<div class="placement-controls"><strong id="selected-placement-name">Arrange player</strong><div class="placement-control-row"><span>Avatar size</span><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div><div class="placement-control-row"><span>Name size</span><button id="name-smaller" class="btn compact" type="button" aria-label="Make selected name smaller">Smaller</button><input id="name-size" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="Selected name size" /><output id="name-size-output">100%</output><button id="name-larger" class="btn compact" type="button" aria-label="Make selected name larger">Larger</button></div><div class="placement-name-position"><label for="name-position">Name position</label><select id="name-position" class="input">${namePositionOptions()}</select></div><p>Choose a name position, then drag the label for fine adjustment.</p></div>` : ""}
           <div id="live-preview" class="preview ${escapeHtml(session.background)} ${escapeHtml(session.layout)} ${customArrangement ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
           <div class="game-strip"><span>Works with</span><strong>R.E.P.O.</strong><strong>PEAK</strong><strong>Meccha Chameleon</strong><strong>Any game</strong></div>
         </section>
@@ -856,6 +877,7 @@ function showPlayerModal(player = null) {
     <div class="field"><label>Stable player ID</label><input name="id" class="input mono" required value="${escapeHtml(player?.id || "")}" ${player ? "readonly" : ""} placeholder="player-name" /></div>
     <div class="field"><label>Display name</label><input name="name" class="input" required value="${escapeHtml(player?.name || "")}" placeholder="Player name" /></div>
     <div class="field"><label>Name font</label><select name="nameFont" class="input font-choice font-${normalizeNameFont(player?.nameFont)}">${nameFontOptions(normalizeNameFont(player?.nameFont))}</select></div>
+    <div class="field"><label>Name position</label><select name="namePosition" class="input">${namePositionOptions()}</select><span class="hint">Choose a preset here, then fine tune it by dragging the name in Arrange players.</span></div>
     <div class="two-col"><div class="field"><label>Name background</label><select name="nameBackground" class="input"><option value="solid" ${player?.nameBackground !== "none" ? "selected" : ""}>Background color</option><option value="none" ${player?.nameBackground === "none" ? "selected" : ""}>No background</option></select></div><div class="field"><label>Background color</label><input name="nameBackgroundColor" class="input" type="color" value="${escapeHtml(player?.nameBackgroundColor || "#090305")}" /></div></div>
     <div class="two-col"><div class="field"><label>Idle image</label><input name="idle" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div><div class="field"><label>Talking image</label><input name="talking" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
     ${player?.source === "discord" ? `<label class="check-row"><input name="useDiscordAvatar" type="checkbox" ${player.useDiscordAvatar !== false ? "checked" : ""} /><span>Use this person's Discord profile picture when no custom image is set</span></label>` : ""}
@@ -875,7 +897,8 @@ function showPlayerModal(player = null) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const id = form.get("id");
-    await api(`/api/sessions/${session.id}/players/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ name: form.get("name"), nameFont: form.get("nameFont"), nameBackground: form.get("nameBackground"), nameBackgroundColor: form.get("nameBackgroundColor"), accent: form.get("accent"), pinned: true, speakingAnimation: form.get("animateSpeaking") ? form.get("speakingAnimation") : "none", ...(player?.source === "discord" ? { useDiscordAvatar: Boolean(form.get("useDiscordAvatar")) } : {}) }) });
+    const positionPreset = namePositionPresets[form.get("namePosition")];
+    await api(`/api/sessions/${session.id}/players/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ name: form.get("name"), nameFont: form.get("nameFont"), nameBackground: form.get("nameBackground"), nameBackgroundColor: form.get("nameBackgroundColor"), ...(positionPreset ? { nameOffsetX: positionPreset.x, nameOffsetY: positionPreset.y } : {}), accent: form.get("accent"), pinned: true, speakingAnimation: form.get("animateSpeaking") ? form.get("speakingAnimation") : "none", ...(player?.source === "discord" ? { useDiscordAvatar: Boolean(form.get("useDiscordAvatar")) } : {}) }) });
     if (form.get("idle")?.size || form.get("talking")?.size) {
       const images = new FormData();
       if (form.get("idle")?.size) images.append("idle", form.get("idle"));
@@ -1260,10 +1283,18 @@ async function runOverlay() {
     });
     stage.querySelectorAll("img[data-webcam-src]").forEach((image) => connectWebcamStream(image, id, overlayToken, image.closest(".avatar").dataset.playerId));
   };
+  let pollBusy = false;
+  const refresh = async () => {
+    if (pollBusy) return;
+    pollBusy = true;
+    try { render(await api(`/api/overlay/${id}/${overlayToken}?now=${Date.now()}`)); }
+    finally { pollBusy = false; }
+  };
   try {
-    render(await api(`/api/overlay/${id}/${overlayToken}`));
+    await refresh();
     const events = new EventSource(`/api/events/${id}/${overlayToken}`);
     events.onmessage = (event) => render(JSON.parse(event.data));
+    setInterval(() => refresh().catch(() => {}), 2000);
   } catch {
     app.innerHTML = "";
   }
