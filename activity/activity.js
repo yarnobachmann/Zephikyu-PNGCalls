@@ -11,6 +11,8 @@ let discordSdk;
 let bridgeToken;
 let socket;
 let heartbeat;
+let reconnectTimer;
+let reconnectAttempt = 0;
 let selectedRoom;
 let channelName = "Discord call";
 
@@ -100,19 +102,25 @@ function connectRoom() {
   selectedRoom = roomSelect.value;
   if (!selectedRoom) return;
   localStorage.setItem("pngcalls-activity-room", selectedRoom);
-  socket?.close();
+  clearTimeout(reconnectTimer);
+  const previousSocket = socket;
+  socket = null;
+  previousSocket?.close();
   clearInterval(heartbeat);
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  socket = new WebSocket(`${protocol}//${location.host}/ws/activity/${encodeURIComponent(selectedRoom)}/${encodeURIComponent(bridgeToken)}`);
+  const activeSocket = new WebSocket(`${protocol}//${location.host}/ws/activity/${encodeURIComponent(selectedRoom)}/${encodeURIComponent(bridgeToken)}`);
+  socket = activeSocket;
   setStatus("Connecting to PNGCalls", "The Activity will stay quiet in the background.");
-  socket.addEventListener("open", () => {
+  activeSocket.addEventListener("open", () => {
+    if (socket !== activeSocket) return;
+    reconnectAttempt = 0;
     setStatus("Call detection is live", "Checking the current call participants...");
     sendSnapshot();
     heartbeat = setInterval(() => {
       sendSnapshot();
     }, 5000);
   });
-  socket.addEventListener("message", (event) => {
+  activeSocket.addEventListener("message", (event) => {
     try {
       const message = JSON.parse(String(event.data));
       if (message.type !== "snapshot_ack") return;
@@ -120,12 +128,21 @@ function connectRoom() {
       setStatus("Call detection is live", `${count} participant${count === 1 ? "" : "s"} sent to ${message.roomName || "PNGCalls"}. Keep this Activity open.`);
     } catch {}
   });
-  socket.addEventListener("close", () => {
+  activeSocket.addEventListener("close", () => {
+    if (socket !== activeSocket) return;
     clearInterval(heartbeat);
-    setStatus("PNGCalls disconnected", "Press Connect to try again.");
+    socket = null;
+    reconnectAttempt += 1;
+    const delay = Math.min(10_000, 1000 * (2 ** Math.min(reconnectAttempt - 1, 3)));
+    setStatus("Reconnecting to PNGCalls", "Call detection will resume automatically.");
+    reconnectTimer = setTimeout(connectRoom, delay);
   });
-  socket.addEventListener("error", () => setStatus("Could not reach PNGCalls", "Check that the server and Cloudflare Tunnel are online."));
+  activeSocket.addEventListener("error", () => {
+    if (socket === activeSocket) setStatus("Connection interrupted", "PNGCalls is reconnecting automatically.");
+  });
 }
+
+window.addEventListener("online", () => { if (!socket || socket.readyState > WebSocket.OPEN) connectRoom(); });
 
 async function start() {
   const configResponse = await fetch("/api/discord/activity/config", { cache: "no-store" });

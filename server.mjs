@@ -789,6 +789,11 @@ const webcamSockets = new WebSocketServer({ noServer: true, maxPayload: 512 * 10
 const overlayStateSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const discordCompanionSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const discordActivitySockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+const socketKeepAlive = setInterval(() => {
+  for (const socketServer of [overlayStateSockets, discordCompanionSockets, discordActivitySockets]) {
+    for (const socket of socketServer.clients) if (socket.readyState === WebSocket.OPEN) socket.ping();
+  }
+}, 20_000);
 const webcamViewers = new Map();
 const webcamPublishers = new Map();
 const webcamKey = (roomId, playerId) => `${roomId}:${playerId}`;
@@ -975,5 +980,5 @@ server.on("upgrade", async (request, socket, head) => {
   } catch { socket.destroy(); }
 });
 
-async function shutdown() { webcamSockets.close(); overlayStateSockets.close(); discordCompanionSockets.close(); discordActivitySockets.close(); server.close(async () => { await prisma.$disconnect(); process.exit(0); }); }
+async function shutdown() { clearInterval(socketKeepAlive); webcamSockets.close(); overlayStateSockets.close(); discordCompanionSockets.close(); discordActivitySockets.close(); server.close(async () => { await prisma.$disconnect(); process.exit(0); }); }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);

@@ -473,11 +473,20 @@ function syncDashboardLive(data) {
 }
 
 function startDashboardLive() {
-  if (dashboardEvents?.roomId === session.id) return;
+  if (dashboardEvents?.roomId === session.id && dashboardEvents.readyState <= WebSocket.OPEN) return;
   stopDashboardLive();
-  dashboardEvents = new EventSource(`/api/events/${session.id}/${session.overlayToken}`);
-  dashboardEvents.roomId = session.id;
-  dashboardEvents.onmessage = (event) => syncDashboardLive(JSON.parse(event.data));
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const liveSocket = new WebSocket(`${protocol}//${location.host}/ws/overlay/${encodeURIComponent(session.id)}/${encodeURIComponent(session.overlayToken)}`);
+  liveSocket.roomId = session.id;
+  dashboardEvents = liveSocket;
+  liveSocket.onmessage = (event) => {
+    try { syncDashboardLive(JSON.parse(String(event.data))); } catch {}
+  };
+  liveSocket.onclose = () => {
+    if (dashboardEvents !== liveSocket) return;
+    dashboardEvents = null;
+    setTimeout(() => { if (session?.id === liveSocket.roomId) startDashboardLive(); }, 1000);
+  };
 }
 
 const placementPayload = (players) => players.map((player) => ({
