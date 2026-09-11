@@ -23,6 +23,7 @@ fs.mkdirSync(uploadDir, { recursive: true });
 const prisma = new PrismaClient();
 const app = express();
 const clients = new Map();
+const overlayClients = new Map();
 const discordStates = new Map();
 const discordCompanions = new Map();
 const discordActivities = new Map();
@@ -253,6 +254,10 @@ async function broadcast(roomId) {
   const payload = await roomPayload(roomId);
   if (!payload) return;
   for (const response of clients.get(roomId) || []) response.write(`data: ${JSON.stringify(payload)}\n\n`);
+  const serialized = JSON.stringify(payload);
+  for (const socket of overlayClients.get(roomId) || []) {
+    if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < 256 * 1024) socket.send(serialized);
+  }
 }
 
 function removeUploadedFile(url) {
@@ -781,11 +786,24 @@ app.use((error, req, res, _next) => {
 await importLegacyState();
 const server = app.listen(port, host, () => console.log(`Zephikyu PNGCalls is ready at http://${host}:${port}`));
 const webcamSockets = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 });
+const overlayStateSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const discordCompanionSockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const discordActivitySockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const webcamViewers = new Map();
 const webcamPublishers = new Map();
 const webcamKey = (roomId, playerId) => `${roomId}:${playerId}`;
+
+overlayStateSockets.on("connection", async (socket, context) => {
+  const group = overlayClients.get(context.roomId) || new Set();
+  group.add(socket);
+  overlayClients.set(context.roomId, group);
+  const payload = await roomPayload(context.roomId).catch(() => null);
+  if (payload && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
+  socket.on("close", () => {
+    group.delete(socket);
+    if (!group.size) overlayClients.delete(context.roomId);
+  });
+});
 
 webcamSockets.on("connection", (socket, context) => {
   const key = webcamKey(context.roomId, context.playerId);
@@ -937,6 +955,11 @@ server.on("upgrade", async (request, socket, head) => {
       if (!room || !activitySession || activitySession.expiresAt <= Date.now() || !linked || !safeEqual(activitySession.userId, linked.discordUserId)) return socket.destroy();
       return discordActivitySockets.handleUpgrade(request, socket, head, (client) => discordActivitySockets.emit("connection", client, { roomId, roomName: room.name }));
     }
+    if (parts.length === 4 && parts[0] === "ws" && parts[1] === "overlay") {
+      const room = await prisma.room.findUnique({ where: { id: cleanId(parts[2]) } });
+      if (!room || !validRoomToken(parts[3], room.overlayToken)) return socket.destroy();
+      return overlayStateSockets.handleUpgrade(request, socket, head, (client) => overlayStateSockets.emit("connection", client, { roomId: room.id }));
+    }
     if (parts.length !== 5 || parts[0] !== "ws" || !["publish", "view"].includes(parts[1])) return socket.destroy();
     const [, role, roomId, roomToken, playerId] = parts;
     const room = await prisma.room.findUnique({ where: { id: cleanId(roomId) }, include: { players: true } });
@@ -952,5 +975,5 @@ server.on("upgrade", async (request, socket, head) => {
   } catch { socket.destroy(); }
 });
 
-async function shutdown() { webcamSockets.close(); discordCompanionSockets.close(); discordActivitySockets.close(); server.close(async () => { await prisma.$disconnect(); process.exit(0); }); }
+async function shutdown() { webcamSockets.close(); overlayStateSockets.close(); discordCompanionSockets.close(); discordActivitySockets.close(); server.close(async () => { await prisma.$disconnect(); process.exit(0); }); }
 process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);

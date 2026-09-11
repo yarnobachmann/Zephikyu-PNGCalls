@@ -1285,6 +1285,7 @@ async function runOverlay() {
     stage.querySelectorAll("img[data-webcam-src]").forEach((image) => connectWebcamStream(image, id, overlayToken, image.closest(".avatar").dataset.playerId));
   };
   let pollBusy = false;
+  let stateSocket;
   const refresh = async () => {
     if (pollBusy) return;
     pollBusy = true;
@@ -1293,8 +1294,15 @@ async function runOverlay() {
   };
   try {
     await refresh();
-    const events = new EventSource(`/api/events/${id}/${overlayToken}`);
-    events.onmessage = (event) => render(JSON.parse(event.data));
+    const connectState = () => {
+      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      stateSocket = new WebSocket(`${protocol}//${location.host}/ws/overlay/${encodeURIComponent(id)}/${encodeURIComponent(overlayToken)}`);
+      stateSocket.onmessage = (event) => {
+        try { render(JSON.parse(String(event.data))); } catch {}
+      };
+      stateSocket.onclose = () => setTimeout(connectState, 1000);
+    };
+    connectState();
     setInterval(() => refresh().catch(() => {}), 2000);
   } catch {
     app.innerHTML = "";

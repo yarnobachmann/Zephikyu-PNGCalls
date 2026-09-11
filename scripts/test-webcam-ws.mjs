@@ -37,6 +37,7 @@ const openSocket = (url, cookie = "") => new Promise((resolve, reject) => {
 
 let publisher;
 let viewer;
+let stateViewer;
 let companion;
 let activity;
 try {
@@ -163,6 +164,15 @@ try {
   assert.equal(activityOverlay.players.find((player) => player.source === "discord").useDiscordAvatar, true);
   assert.equal(activityOverlay.companion.channelName, "Activity direct call");
   assert.equal(activityOverlay.companion.mode, "activity");
+  stateViewer = await openSocket(`${socketUrl}/ws/overlay/${room.sessionId}/${room.overlayToken}`);
+  const initialState = JSON.parse(String(await once(stateViewer, "message").then(([message]) => message)));
+  assert.equal(initialState.players.some((player) => player.source === "discord"), true);
+  const speakingState = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Overlay state socket missed a speaking update")), 5_000);
+    stateViewer.once("message", (message) => { clearTimeout(timeout); resolve(JSON.parse(String(message))); });
+  });
+  activity.send(JSON.stringify({ type: "snapshot", channel: { id: "777788889999000011", name: "Activity direct call" }, users: [{ id: "222233334444555566", name: "Discord friend", avatar: "abc123", speaking: true, muted: false }] }));
+  assert.equal((await speakingState).players.find((player) => player.source === "discord").speaking, true);
   const styledDiscordPlayer = activityOverlay.players.find((player) => player.source === "discord");
   const styleResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/players/${styledDiscordPlayer.id}`, {
     method: "PUT",
@@ -268,6 +278,7 @@ try {
 } finally {
   publisher?.terminate();
   viewer?.terminate();
+  stateViewer?.terminate();
   companion?.terminate();
   activity?.terminate();
   server.kill("SIGTERM");
