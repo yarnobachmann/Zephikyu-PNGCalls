@@ -1,6 +1,6 @@
 {
   "name": "zephikyu-pngcalls",
-  "version": "1.2.19",
+  "version": "1.2.20",
   "private": true,
   "type": "module",
   "description": "Zephikyu branded, self-hosted PNG and webcam calls for OBS.",
@@ -10,7 +10,8 @@
     "db:init": "node --no-warnings scripts/init-db.mjs",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "check": "node --check server.mjs && node --check public/app.js && node --check public/activity.js && node --check activity/activity.js && node --check companion/pngcalls-companion.cjs && node --check scripts/init-db.mjs && node --check scripts/test-webcam-ws.mjs && node --check scripts/build-companion.mjs && node --check scripts/build-activity.mjs && prisma validate",
+    "check": "node --check server.mjs && node --check public/app.js && node --check public/gif-timing.js && node --check public/activity.js && node --check activity/activity.js && node --check companion/pngcalls-companion.cjs && node --check scripts/init-db.mjs && node --check scripts/test-webcam-ws.mjs && node --check scripts/test-gif-timing.mjs && node --check scripts/build-companion.mjs && node --check scripts/build-activity.mjs && prisma validate",
+    "test:gif": "node scripts/test-gif-timing.mjs",
     "test:webcam": "node scripts/test-webcam-ws.mjs",
     "build:companion": "node scripts/build-companion.mjs",
     "build:activity": "node scripts/build-activity.mjs"

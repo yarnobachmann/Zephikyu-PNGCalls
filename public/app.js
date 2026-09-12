@@ -1,3 +1,5 @@
+import { inspectGifTiming } from "./gif-timing.js?v=1";
+
 const app = document.querySelector("#app");
 document.title = "Zephikyu PNGCalls";
 let sessionId = localStorage.getItem("pngcalls.sessionId") || localStorage.getItem("relay.sessionId");
@@ -134,14 +136,63 @@ function avatarMarkup(player) {
   </article>`;
 }
 
+const gifPlaybackPromises = new Map();
+const gifPlaybackResources = new Map();
+
+function loadGifPlayback(source) {
+  if (gifPlaybackPromises.has(source)) return gifPlaybackPromises.get(source);
+  const pending = fetch(source, { cache: "force-cache" }).then(async (response) => {
+    if (!response.ok) throw new Error(`Could not load GIF (${response.status})`);
+    const blob = await response.blob();
+    const timing = inspectGifTiming(await blob.arrayBuffer());
+    const resource = { blob, durationMs: timing.durationMs };
+    gifPlaybackResources.set(source, resource);
+    return resource;
+  }).catch(() => ({ blob: null, durationMs: 4000 }));
+  gifPlaybackPromises.set(source, pending);
+  return pending;
+}
+
+function freshGifUrl(source, blob = null) {
+  if (blob) return URL.createObjectURL(blob);
+  const url = new URL(source, location.href);
+  url.searchParams.set("pngcalls-gif", `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  return url.href;
+}
+
+function stopTalkingGif(avatar) {
+  if (!avatar) return;
+  clearTimeout(avatar.gifRestartTimer);
+  avatar.gifRestartTimer = null;
+  avatar.gifPlaybackArmed = false;
+  avatar.gifPlaybackGeneration = (avatar.gifPlaybackGeneration || 0) + 1;
+}
+
 function restartTalkingGif(avatar, source) {
-  if (!avatar || !/\.gif(?:$|[?#])/i.test(source || "")) return;
+  if (!avatar || !/\.gif(?:$|[?#])/i.test(source || "")) return stopTalkingGif(avatar);
   const image = avatar.querySelector(".avatar-img-talking");
   if (!image) return;
+  clearTimeout(avatar.gifRestartTimer);
+  avatar.gifPlaybackArmed = true;
+  avatar.gifPlaybackSource = source;
+  const generation = (avatar.gifPlaybackGeneration || 0) + 1;
+  avatar.gifPlaybackGeneration = generation;
+  const resource = gifPlaybackResources.get(source);
+  const previousBlobUrl = image.dataset.pngcallsBlobUrl || "";
   const restarted = image.cloneNode(true);
   restarted.dataset.source = source;
-  restarted.src = `${source}${source.includes("#") ? "&" : "#"}pngcalls-${Date.now()}`;
+  delete restarted.dataset.pngcallsBlobUrl;
+  const nextUrl = freshGifUrl(source, resource?.blob);
+  if (resource?.blob) restarted.dataset.pngcallsBlobUrl = nextUrl;
+  const releasePrevious = () => { if (previousBlobUrl) URL.revokeObjectURL(previousBlobUrl); };
+  restarted.addEventListener("load", releasePrevious, { once: true });
+  restarted.addEventListener("error", releasePrevious, { once: true });
+  restarted.src = nextUrl;
   image.replaceWith(restarted);
+  loadGifPlayback(source).then(({ durationMs }) => {
+    if (!avatar.isConnected || !avatar.classList.contains("speaking") || avatar.gifPlaybackGeneration !== generation || avatar.gifPlaybackSource !== source) return;
+    avatar.gifRestartTimer = setTimeout(() => restartTalkingGif(avatar, source), clamp(durationMs + 40, 250, 60_000));
+  });
 }
 
 function positionAvatarName(avatar, player) {
@@ -489,7 +540,8 @@ function applyPlayerState(avatar, player, includePlacement = true) {
     const talkingImage = avatar.querySelector(".avatar-img-talking");
     if (idleImage && idleSource && idleImage.dataset.source !== idleSource) { idleImage.dataset.source = idleSource; idleImage.src = idleSource; }
     if (talkingImage && talkingSource && talkingImage.dataset.source !== talkingSource) { talkingImage.dataset.source = talkingSource; talkingImage.src = talkingSource; }
-    if (player.speaking && !wasSpeaking) restartTalkingGif(avatar, talkingSource);
+    if (player.speaking && (!wasSpeaking || !avatar.gifPlaybackArmed || avatar.gifPlaybackSource !== talkingSource)) restartTalkingGif(avatar, talkingSource);
+    if (!player.speaking && (wasSpeaking || avatar.gifPlaybackArmed)) stopTalkingGif(avatar);
   }
 }
 
@@ -1608,8 +1660,11 @@ async function startMic(id, joinToken, identity, storageKey) {
   const updateSpeaking = (nextSpeaking, level) => {
     const changed = speaking !== nextSpeaking;
     speaking = nextSpeaking;
-    document.querySelector("#guest-live-preview .avatar")?.classList.toggle("speaking", speaking);
-    if (changed && speaking) restartTalkingGif(document.querySelector("#guest-live-preview .avatar"), identity.talkingImage || identity.idleImage || "");
+    const guestAvatar = document.querySelector("#guest-live-preview .avatar");
+    guestAvatar?.classList.toggle("speaking", speaking);
+    if (guestAvatar) guestAvatar.dataset.speaking = speaking ? "true" : "false";
+    if (changed && speaking) restartTalkingGif(guestAvatar, identity.talkingImage || identity.idleImage || "");
+    if (changed && !speaking) stopTalkingGif(guestAvatar);
     document.querySelector("#meter-bar").style.transform = `scaleX(${Math.min(1, level * 12)})`;
     document.querySelector("#mic-label").textContent = speaking ? "Speaking" : "Listening for your voice";
     if (changed) sendSpeakingState();
