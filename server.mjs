@@ -31,7 +31,7 @@ const discordActivitySessions = new Map();
 const discordOAuthCookie = "zephikyu_discord_oauth";
 const auditSalt = crypto.randomBytes(32);
 const allowedImages = new Map([["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/gif", "gif"]]);
-const speakingAnimations = new Set(["none", "bounce", "pulse", "shake", "glow"]);
+const speakingAnimations = new Set(["none", "bounce", "pulse", "shake", "glow", "sway", "float", "breathe"]);
 const speakingAnimation = (value) => speakingAnimations.has(value) ? value : "none";
 const nameFonts = new Set(["rounded", "comic", "typewriter", "classic", "bold", "clean", "modern", "narrow", "slab", "elegant", "bubbly", "marker", "pixel", "fantasy", "spooky"]);
 const nameFont = (value) => nameFonts.has(value) ? value : "rounded";

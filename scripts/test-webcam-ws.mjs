@@ -178,7 +178,7 @@ try {
   const styleResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/players/${styledDiscordPlayer.id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
-    body: JSON.stringify({ name: styledDiscordPlayer.name, nameFont: "comic", nameBackground: "none", nameBackgroundColor: "#123456", nameOffsetX: 14, nameOffsetY: -32, useDiscordAvatar: true }),
+    body: JSON.stringify({ name: styledDiscordPlayer.name, nameFont: "comic", nameBackground: "none", nameBackgroundColor: "#123456", nameOffsetX: 14, nameOffsetY: -32, speakingAnimation: "sway", useDiscordAvatar: true }),
   });
   assert.equal(styleResponse.status, 200);
   const styledOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
@@ -186,6 +186,7 @@ try {
   assert.equal(styledOverlay.players.find((player) => player.id === styledDiscordPlayer.id).nameBackground, "none");
   assert.equal(styledOverlay.players.find((player) => player.id === styledDiscordPlayer.id).nameOffsetX, 14);
   assert.equal(styledOverlay.players.find((player) => player.id === styledDiscordPlayer.id).nameOffsetY, -32);
+  assert.equal(styledOverlay.players.find((player) => player.id === styledDiscordPlayer.id).speakingAnimation, "sway");
   await new Promise((resolve) => setTimeout(resolve, 7250));
   const silentActivityOverlay = await fetch(`${baseUrl}/api/overlay/${room.sessionId}/${room.overlayToken}`).then((response) => response.json());
   assert.equal(silentActivityOverlay.players.some((player) => player.id === styledDiscordPlayer.id), true, "Silent Discord users must remain visible while the Activity is connected");

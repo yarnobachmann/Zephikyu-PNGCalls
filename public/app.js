@@ -14,12 +14,20 @@ let dashboardEvents = null;
 let placementEditing = false;
 let selectedPlacementId = null;
 let placementSnapEnabled = localStorage.getItem("pngcalls.placementSnap") !== "false";
+let placementExpanded = false;
+let placementEditorCleanup = null;
 
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, Number(value)));
 const nameFontValues = ["rounded", "comic", "typewriter", "classic", "bold", "clean", "modern", "narrow", "slab", "elegant", "bubbly", "marker", "pixel", "fantasy", "spooky"];
 const normalizeNameFont = (value) => nameFontValues.includes(value) ? value : "rounded";
+const speakingAnimationValues = ["none", "bounce", "pulse", "shake", "glow", "sway", "float", "breathe"];
+const normalizeSpeakingAnimation = (value) => speakingAnimationValues.includes(value) ? value : "none";
+const speakingAnimationOptions = (selected = "bounce") => [
+  ["bounce", "Bounce"], ["pulse", "Pulse"], ["shake", "Shake"], ["glow", "Glow"],
+  ["sway", "Soft sway"], ["float", "Gentle float"], ["breathe", "Breathe"],
+].map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
 const nameFontOptions = (selected = "rounded") => [
   ["rounded", "Friendly rounded"],
   ["comic", "Handwritten"],
@@ -116,7 +124,7 @@ function avatarMarkup(player) {
   const avatarFallback = player.useDiscordAvatar ? player.discordAvatar : null;
   const idleImage = player.idleImage || avatarFallback;
   const talkingImage = player.talkingImage || idleImage;
-  const animation = ["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none";
+  const animation = normalizeSpeakingAnimation(player.speakingAnimation);
   const font = normalizeNameFont(player.nameFont);
   const positioned = player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined;
   const x = clamp(player.positionX ?? 50, 0, 100);
@@ -312,7 +320,7 @@ function toast(message) {
 }
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
-const tutorialRevision = "10";
+const tutorialRevision = "11";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
     ["input[name='name']", "Enter your display name. PNGCalls remembers it and the other setup choices on this device."],
@@ -343,7 +351,7 @@ function tutorialSteps() {
     ["#copy-join", "Copy this invitation link and send it to every player who should appear."],
     ["[data-reset-player-link]", "Reset the invitation between streams without changing OBS. Current players disconnect, but their saved names, styling, and uploaded PNGs return when they join the new invitation from the same browser."],
     ["#copy-overlay", "Copy this private link into an OBS Browser Source. Speaking changes use the same direct live connection as this preview."],
-    ["#edit-placement", "Open Arrange players to drag and resize avatars and names. Name positions now stay attached when their character is resized. Select a PNGTuber for idle appearance, name visibility, and snapping controls."],
+    ["#edit-placement", "Open Arrange players to drag and resize avatars and names. Use the 1920 x 1080 editor for the exact OBS canvas, and select a PNGTuber for idle appearance, name visibility, and snapping controls."],
     ["[data-view='players']", "The player room shows everyone who joined. Edit a player to change images, font, name background, accent, and profile-picture fallback."],
     ["[data-view='settings']", "Settings control the room and Discord Activity. The connector reconnects automatically, but works best when you keep its Discord Activity tab open."],
   ];
@@ -536,8 +544,8 @@ function applyPlayerState(avatar, player, includePlacement = true) {
   avatar.classList.toggle("speaking", Boolean(player.speaking));
   avatar.classList.toggle("idle-opaque", player.idleTransparent === false);
   avatar.classList.toggle("name-hidden", player.nameVisible === false);
-  avatar.classList.remove("animation-none", "animation-bounce", "animation-pulse", "animation-shake", "animation-glow");
-  avatar.classList.add(`animation-${["bounce", "pulse", "shake", "glow"].includes(player.speakingAnimation) ? player.speakingAnimation : "none"}`);
+  avatar.classList.remove(...speakingAnimationValues.map((animation) => `animation-${animation}`));
+  avatar.classList.add(`animation-${normalizeSpeakingAnimation(player.speakingAnimation)}`);
   avatar.classList.remove(...nameFontValues.map((font) => `font-${font}`));
   avatar.classList.add(`font-${normalizeNameFont(player.nameFont)}`);
   avatar.style.setProperty("--accent", player.accent);
@@ -641,6 +649,50 @@ async function savePlacements(players) {
   return api(`/api/sessions/${session.id}/placements`, { method: "PUT", body: JSON.stringify({ players: placementPayload(players) }) });
 }
 
+function openPlacementResolutionEditor() {
+  if (!placementEditing || document.querySelector(".resolution-editor")) return;
+  const preview = document.querySelector("#live-preview");
+  const controls = document.querySelector(".placement-controls");
+  if (!preview || !controls) return;
+  placementExpanded = true;
+  const editor = document.createElement("section");
+  editor.className = "resolution-editor";
+  editor.innerHTML = `<div class="resolution-editor-panel"><header class="resolution-editor-header"><div><div class="eyebrow">OBS canvas editor</div><h2>1920 × 1080 arrangement</h2><p>Every position and size maps directly to the browser source.</p></div><div class="actions"><span id="resolution-editor-scale" class="badge">Fitting canvas</span><button id="close-resolution-editor" class="btn ghost" type="button">Return to dashboard</button><button id="finish-resolution-editor" class="btn primary" type="button">Done arranging</button></div></header><div class="resolution-editor-controls"></div><div class="resolution-editor-viewport"><div class="resolution-editor-stage"></div></div></div>`;
+  document.body.append(editor);
+  editor.querySelector(".resolution-editor-controls").append(controls);
+  editor.querySelector(".resolution-editor-stage").append(preview);
+  const fitCanvas = () => {
+    const viewport = editor.querySelector(".resolution-editor-viewport");
+    const stage = editor.querySelector(".resolution-editor-stage");
+    const scale = Math.min(viewport.clientWidth / 1920, viewport.clientHeight / 1080);
+    stage.style.width = `${1920 * scale}px`;
+    stage.style.height = `${1080 * scale}px`;
+    preview.style.transform = `scale(${scale})`;
+    editor.querySelector("#resolution-editor-scale").textContent = `1920 × 1080 at ${Math.round(scale * 100)}%`;
+  };
+  const closeEditor = (finish = false) => {
+    placementExpanded = false;
+    if (finish) {
+      placementEditing = false;
+      selectedPlacementId = null;
+    }
+    placementEditorCleanup?.();
+    renderDashboard();
+  };
+  editor.querySelector("#close-resolution-editor").onclick = () => closeEditor(false);
+  editor.querySelector("#finish-resolution-editor").onclick = () => closeEditor(true);
+  const handleKey = (event) => { if (event.key === "Escape") closeEditor(false); };
+  placementEditorCleanup = () => {
+    window.removeEventListener("resize", fitCanvas);
+    document.removeEventListener("keydown", handleKey);
+    editor.remove();
+    placementEditorCleanup = null;
+  };
+  document.addEventListener("keydown", handleKey);
+  window.addEventListener("resize", fitCanvas);
+  requestAnimationFrame(fitCanvas);
+}
+
 function bindPlacementEditor() {
   const preview = document.querySelector("#live-preview");
   const editButton = document.querySelector("#edit-placement");
@@ -650,6 +702,7 @@ function bindPlacementEditor() {
   editButton.onclick = async () => {
     if (placementEditing) {
       placementEditing = false;
+      placementExpanded = false;
       selectedPlacementId = null;
       renderDashboard();
       return;
@@ -682,6 +735,7 @@ function bindPlacementEditor() {
       await api(`/api/sessions/${session.id}/placements`, { method: "PUT", body: JSON.stringify({ reset: true }) });
       session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0, nameVisible: true }));
       placementEditing = false;
+      placementExpanded = false;
       selectedPlacementId = null;
       renderDashboard();
       toast("Automatic layout restored");
@@ -692,6 +746,7 @@ function bindPlacementEditor() {
   };
 
   if (!placementEditing) return;
+  document.querySelector("#expand-placement")?.addEventListener("click", openPlacementResolutionEditor);
   const sizeInput = document.querySelector("#placement-size");
   const sizeOutput = document.querySelector("#placement-size-output");
   const nameSizeInput = document.querySelector("#name-size");
@@ -870,6 +925,7 @@ function bindPlacementEditor() {
     };
   });
   syncSizeControls();
+  if (placementExpanded) requestAnimationFrame(openPlacementResolutionEditor);
 }
 
 async function chooseAutomaticLayout(layout) {
@@ -879,12 +935,14 @@ async function chooseAutomaticLayout(layout) {
   Object.assign(session, secrets);
   session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0, nameVisible: true }));
   placementEditing = false;
+  placementExpanded = false;
   selectedPlacementId = null;
   renderDashboard();
   toast(`${layout[0].toUpperCase()}${layout.slice(1)} layout applied to preview and OBS`);
 }
 
 function renderDashboard() {
+  placementEditorCleanup?.();
   app.querySelectorAll("img[data-webcam-src]").forEach((image) => {
     image.webcamSocket?.close();
     if (image.dataset.webcamBlob) URL.revokeObjectURL(image.dataset.webcamBlob);
@@ -909,7 +967,7 @@ function renderDashboard() {
       <section class="view-panel ${activeView === "overlay" ? "active" : ""}" data-panel="overlay"><div class="grid">
         <section class="card">
           <div class="card-head"><div><h2>Live preview</h2><p class="subtle">This now follows the same live feed as OBS.</p></div><span id="live-count-badge" class="badge ${session.onlineCount ? "live" : ""}">${session.onlineCount ? `${session.onlineCount} ONLINE` : "PREVIEW"}</span></div>
-          <div class="placement-toolbar"><button id="edit-placement" class="btn ${placementEditing ? "primary" : "ghost"}" type="button">${placementEditing ? "Done arranging" : "Arrange players"}</button><button id="reset-placement" class="btn ghost" type="button" ${customArrangement ? "" : "hidden"}>Reset arrangement</button><span>${placementEditing ? "Drag players to move them. Select one and use the size controls." : "Positions are shared with the OBS browser source."}</span></div>
+          <div class="placement-toolbar"><button id="edit-placement" class="btn ${placementEditing ? "primary" : "ghost"}" type="button">${placementEditing ? "Done arranging" : "Arrange players"}</button>${placementEditing ? `<button id="expand-placement" class="btn ghost" type="button">Open 1920 × 1080 editor</button>` : ""}<button id="reset-placement" class="btn ghost" type="button" ${customArrangement ? "" : "hidden"}>Reset arrangement</button><span>${placementEditing ? "Drag players to move them. Select one and use the size controls." : "Positions are shared with the OBS browser source."}</span></div>
           ${placementEditing && players.length ? `<div class="placement-controls"><strong id="selected-placement-name">Arrange player</strong><div class="placement-control-row"><span>Avatar size</span><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div><div class="placement-control-row"><span>Name size</span><button id="name-smaller" class="btn compact" type="button" aria-label="Make selected name smaller">Smaller</button><input id="name-size" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="Selected name size" /><output id="name-size-output">100%</output><button id="name-larger" class="btn compact" type="button" aria-label="Make selected name larger">Larger</button></div><div class="placement-name-position"><label for="name-position">Name position</label><select id="name-position" class="input">${namePositionOptions()}</select></div><div id="idle-appearance-row" class="placement-name-position"><label for="idle-appearance">Idle appearance</label><select id="idle-appearance" class="input"><option value="faded">Transparent while idle</option><option value="solid">Fully visible while idle</option></select></div><label class="placement-snap"><input id="placement-snap" type="checkbox" ${placementSnapEnabled ? "checked" : ""} /><span>Snap to other players and the canvas center</span></label><p>Select a PNGTuber to edit its idle appearance. Choose a name position, then drag the label for fine adjustment.</p></div>` : ""}
           <div id="live-preview" class="preview ${escapeHtml(session.background)} ${escapeHtml(session.layout)} ${customArrangement ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${placementEditing ? `<div id="snap-guide-x" class="snap-guide vertical" hidden></div><div id="snap-guide-y" class="snap-guide horizontal" hidden></div>` : ""}${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
           <div class="game-strip"><span>Works with</span><strong>R.E.P.O.</strong><strong>PEAK</strong><strong>Meccha Chameleon</strong><strong>Any game</strong></div>
@@ -1085,7 +1143,7 @@ function showPlayerModal(player = null) {
     <div class="two-col"><div class="field"><label>Idle image</label><input name="idle" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div><div class="field"><label>Talking image</label><input name="talking" class="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></div></div>
     ${player?.source === "discord" ? `<label class="check-row"><input name="useDiscordAvatar" type="checkbox" ${player.useDiscordAvatar !== false ? "checked" : ""} /><span>Use this person's Discord profile picture when no custom image is set</span></label>` : ""}
     <div class="field"><label>Speaking accent</label><input name="accent" class="input" type="color" value="${escapeHtml(player?.accent || "#d0193c")}" /><span class="hint">Used for the name outline, webcam border, and glow while speaking.</span></div>
-    <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" ${player?.speakingAnimation && player.speakingAnimation !== "none" ? "checked" : ""} /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input"><option value="bounce" ${player?.speakingAnimation === "bounce" ? "selected" : ""}>Bounce</option><option value="pulse" ${player?.speakingAnimation === "pulse" ? "selected" : ""}>Pulse</option><option value="shake" ${player?.speakingAnimation === "shake" ? "selected" : ""}>Shake</option><option value="glow" ${player?.speakingAnimation === "glow" ? "selected" : ""}>Glow</option></select></div></div>
+    <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" ${player?.speakingAnimation && player.speakingAnimation !== "none" ? "checked" : ""} /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input">${speakingAnimationOptions(player?.speakingAnimation)}</select></div></div>
     <div class="actions"><button class="btn primary" type="submit">Save player</button><button class="btn ghost" type="button" id="cancel-modal">Cancel</button>${player ? `<button class="btn ghost danger" type="button" id="delete-player">Remove</button>` : ""}</div>
   </form>`;
   document.body.append(modal);
@@ -1221,7 +1279,7 @@ async function runJoin() {
           </section>
           <p id="webcam-note" class="hint" hidden>Choose 30 FPS for normal use or 60 FPS for smoother motion. PNGCalls streams the latest frame and does not make a video recording.</p>
           <div class="field"><label>Speaking accent</label><input class="input" name="accent" type="color" value="${escapeHtml(draft.accent || "#d0193c")}" /><span class="hint">Used for the name outline, webcam border, and glow while speaking.</span></div>
-          <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" ${draft.speakingAnimation && draft.speakingAnimation !== "none" ? "checked" : ""} /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input"><option value="bounce" ${draft.speakingAnimation === "bounce" ? "selected" : ""}>Bounce</option><option value="pulse" ${draft.speakingAnimation === "pulse" ? "selected" : ""}>Pulse</option><option value="shake" ${draft.speakingAnimation === "shake" ? "selected" : ""}>Shake</option><option value="glow" ${draft.speakingAnimation === "glow" ? "selected" : ""}>Glow</option></select></div></div>
+          <div class="animation-controls"><label class="check-row"><input id="animate-speaking" name="animateSpeaking" type="checkbox" ${draft.speakingAnimation && draft.speakingAnimation !== "none" ? "checked" : ""} /><span>Animate while speaking</span></label><div class="field"><label for="speaking-animation">Animation style</label><select id="speaking-animation" name="speakingAnimation" class="input">${speakingAnimationOptions(draft.speakingAnimation)}</select></div></div>
           <button class="btn primary" type="submit">Join and enable microphone</button>
         </form>
       </section>
