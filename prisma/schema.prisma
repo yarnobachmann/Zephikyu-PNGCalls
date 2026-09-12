@@ -38,6 +38,20 @@ model Room {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   players               Player[]
+  layoutPresets          LayoutPreset[]
+}
+
+model LayoutPreset {
+  id        Int      @id @default(autoincrement())
+  roomId    String
+  name      String
+  data      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, name])
+  @@index([roomId])
 }
 
 model Player {

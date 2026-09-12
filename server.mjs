@@ -576,6 +576,93 @@ app.post("/api/sessions", requireHost, requireCsrf, async (req, res) => {
 app.get("/api/sessions/:sessionId", requireHost, async (req, res) => {
   const room = await getRoom(req, res); if (room) res.json({ ...publicRoom(room), joinToken: room.joinToken, overlayToken: room.overlayToken });
 });
+app.get("/api/sessions/:sessionId/layouts", requireHost, async (req, res) => {
+  const room = await getRoom(req, res); if (!room) return;
+  const presets = await prisma.layoutPreset.findMany({ where: { roomId: room.id }, orderBy: { updatedAt: "desc" } });
+  res.json(presets.map((preset) => {
+    let data = {};
+    try { data = JSON.parse(preset.data); } catch {}
+    return { id: preset.id, name: preset.name, playerNames: Array.isArray(data.players) ? data.players.map((player) => player.name).filter(Boolean) : [], updatedAt: preset.updatedAt.getTime() };
+  }));
+});
+app.post("/api/sessions/:sessionId/layouts", requireHost, requireCsrf, async (req, res) => {
+  const room = await getRoom(req, res); if (!room) return;
+  const name = cleanText(req.body?.name, "", 60);
+  if (!name) return res.status(400).json({ error: "Give this layout a name" });
+  const requestedIds = Array.isArray(req.body?.playerIds) ? new Set(req.body.playerIds.map((id) => cleanId(id, "")).filter(Boolean)) : null;
+  const players = room.players.filter((player) => !requestedIds || requestedIds.has(player.id));
+  if (!players.length) return res.status(400).json({ error: "There are no players in this layout" });
+  const data = JSON.stringify({
+    version: 1,
+    layout: room.layout,
+    players: players.map((player) => ({
+      id: player.id, name: player.name,
+      positionX: player.positionX, positionY: player.positionY, displaySize: player.displaySize, displayLayer: player.displayLayer,
+      nameSize: player.nameSize, nameOffsetX: player.nameOffsetX, nameOffsetY: player.nameOffsetY, nameVisible: player.nameVisible,
+      idleTransparent: player.idleTransparent,
+    })),
+  });
+  const preset = await prisma.layoutPreset.upsert({
+    where: { roomId_name: { roomId: room.id, name } },
+    create: { roomId: room.id, name, data },
+    update: { data },
+  });
+  await audit(req, "room.layout_save", "success", room.id);
+  res.status(201).json({ id: preset.id, name: preset.name, playerNames: players.map((player) => player.name), updatedAt: preset.updatedAt.getTime() });
+});
+app.post("/api/sessions/:sessionId/layouts/:layoutId/load", requireHost, requireCsrf, async (req, res) => {
+  const room = await getRoom(req, res); if (!room) return;
+  const layoutId = Number.parseInt(req.params.layoutId, 10);
+  const preset = Number.isSafeInteger(layoutId) ? await prisma.layoutPreset.findFirst({ where: { id: layoutId, roomId: room.id } }) : null;
+  if (!preset) return res.status(404).json({ error: "Saved layout not found" });
+  let saved;
+  try { saved = JSON.parse(preset.data); } catch { return res.status(500).json({ error: "Saved layout is damaged" }); }
+  const currentById = new Map(room.players.map((player) => [player.id, player]));
+  const currentByName = new Map();
+  for (const player of room.players) {
+    const key = player.name.trim().toLocaleLowerCase();
+    if (!currentByName.has(key)) currentByName.set(key, []);
+    currentByName.get(key).push(player);
+  }
+  const used = new Set();
+  const matches = [];
+  const missingNames = [];
+  for (const savedPlayer of Array.isArray(saved.players) ? saved.players : []) {
+    let current = currentById.get(String(savedPlayer.id || ""));
+    if (!current) {
+      const named = currentByName.get(String(savedPlayer.name || "").trim().toLocaleLowerCase()) || [];
+      if (named.length === 1) current = named[0];
+    }
+    if (!current || used.has(current.id)) { if (savedPlayer.name) missingNames.push(savedPlayer.name); continue; }
+    used.add(current.id);
+    matches.push({ current, saved: savedPlayer });
+  }
+  const operations = matches.map(({ current, saved: value }) => prisma.player.update({
+    where: { id: current.id },
+    data: {
+      positionX: value.positionX === null ? null : boundedNumber(value.positionX, 0, 100, 50),
+      positionY: value.positionY === null ? null : boundedNumber(value.positionY, 0, 100, 50),
+      displaySize: boundedNumber(value.displaySize, 0.4, 2.5, 1), displayLayer: Math.round(boundedNumber(value.displayLayer, 0, 1000, 0)),
+      nameSize: boundedNumber(value.nameSize, 0.5, 3, 1), nameOffsetX: boundedNumber(value.nameOffsetX, -100, 100, 0), nameOffsetY: boundedNumber(value.nameOffsetY, -100, 100, 0),
+      nameVisible: value.nameVisible !== false, idleTransparent: value.idleTransparent !== false,
+    },
+  }));
+  const layout = ["row", "stack", "arc"].includes(saved.layout) ? saved.layout : room.layout;
+  operations.push(prisma.room.update({ where: { id: room.id }, data: { layout, updatedAt: new Date() } }));
+  await prisma.$transaction(operations);
+  await audit(req, "room.layout_load", "success", room.id);
+  await broadcast(room.id);
+  res.json({ room: await roomPayload(room.id), matchedCount: matches.length, missingNames });
+});
+app.delete("/api/sessions/:sessionId/layouts/:layoutId", requireHost, requireCsrf, async (req, res) => {
+  const room = await getRoom(req, res); if (!room) return;
+  const layoutId = Number.parseInt(req.params.layoutId, 10);
+  const preset = Number.isSafeInteger(layoutId) ? await prisma.layoutPreset.findFirst({ where: { id: layoutId, roomId: room.id } }) : null;
+  if (!preset) return res.status(404).json({ error: "Saved layout not found" });
+  await prisma.layoutPreset.delete({ where: { id: preset.id } });
+  await audit(req, "room.layout_delete", "success", room.id);
+  res.status(204).end();
+});
 app.patch("/api/sessions/:sessionId", requireHost, requireCsrf, async (req, res) => {
   const current = await getRoom(req, res); if (!current) return;
   const data = {};
@@ -611,7 +698,7 @@ app.post("/api/sessions/:sessionId/reset-join", requireHost, requireCsrf, async 
 app.put("/api/sessions/:sessionId/placements", requireHost, requireCsrf, async (req, res) => {
   const room = await getRoom(req, res); if (!room) return;
   if (req.body?.reset === true) {
-    await prisma.player.updateMany({ where: { roomId: room.id }, data: { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0, nameVisible: true } });
+    await prisma.player.updateMany({ where: { roomId: room.id }, data: { positionX: null, positionY: null, displaySize: 1, displayLayer: 0 } });
   } else {
     const placements = Array.isArray(req.body?.players) ? req.body.players.slice(0, 32) : [];
     const roomPlayerIds = new Set(room.players.map((player) => player.id));

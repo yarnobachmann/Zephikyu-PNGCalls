@@ -96,7 +96,9 @@ The player link lets people add themselves to the room. The OBS link is read-onl
 
 ### Arranging the OBS overlay
 
-Select **Arrange players** in the live preview, then drag a player to position it. Select a player and use Smaller, Larger, or the size slider to resize it. The corner handle also supports diagonal resizing. Positions and sizes are saved as percentages and applied to the OBS browser source. Choosing Horizontal row, Soft arc, or Vertical stack clears the custom arrangement and immediately returns both preview and OBS to that automatic layout.
+Select **Arrange players** in the live preview, then drag a player to position it. Select a player and use Smaller, Larger, or the size slider to resize it. The corner handle also supports diagonal resizing. Positions and sizes are saved as percentages and applied to the OBS browser source. Choosing Horizontal row, Soft arc, or Vertical stack clears only the custom avatar positions and immediately returns both preview and OBS to that automatic layout. It keeps each player's name position, name size, visibility, and idle appearance.
+
+Use **Save layout** above the preview to store a named setup for the players currently in it. The saved-layout list shows those player names. Loading it restores matching players by their stable player ID first and by an exact display-name match as a fallback, including players who are currently offline but return later.
 
 ## Internet hosting
 

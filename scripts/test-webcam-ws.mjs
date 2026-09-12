@@ -272,6 +272,16 @@ try {
   assert.equal(placedOverlayPlayer.nameOffsetY, 12);
   assert.equal(placedOverlayPlayer.nameVisible, false);
   assert.equal(placedOverlayPlayer.idleTransparent, false);
+  const savedLayoutResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/layouts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
+    body: JSON.stringify({ name: "Camera close-up", playerIds: [participant.playerId] }),
+  });
+  assert.equal(savedLayoutResponse.status, 201);
+  const savedLayout = await savedLayoutResponse.json();
+  assert.deepEqual(savedLayout.playerNames, ["Camera"]);
+  const savedLayouts = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/layouts`, { headers: { Cookie: hostCookies } }).then((response) => response.json());
+  assert.equal(savedLayouts.some((preset) => preset.id === savedLayout.id && preset.playerNames.includes("Camera")), true);
 
   guestPresence.terminate();
   guestPresence = null;
@@ -316,7 +326,23 @@ try {
   assert.equal(automaticOverlay.layout, "stack");
   assert.equal(automaticOverlay.players.find((player) => player.id === participant.playerId).positionX, null);
   assert.equal(automaticOverlay.players.find((player) => player.id === participant.playerId).displaySize, 1);
-  assert.equal(automaticOverlay.players.find((player) => player.id === participant.playerId).nameVisible, true);
+  assert.equal(automaticOverlay.players.find((player) => player.id === participant.playerId).nameVisible, false);
+  assert.equal(automaticOverlay.players.find((player) => player.id === participant.playerId).nameSize, 1.65);
+  assert.equal(automaticOverlay.players.find((player) => player.id === participant.playerId).nameOffsetX, -8);
+  assert.equal(automaticOverlay.players.find((player) => player.id === participant.playerId).nameOffsetY, 12);
+  const loadedLayoutResponse = await fetch(`${baseUrl}/api/sessions/${room.sessionId}/layouts/${savedLayout.id}/load`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: hostCookies, "X-CSRF-Token": setup.csrfToken },
+  });
+  assert.equal(loadedLayoutResponse.status, 200);
+  const loadedLayout = await loadedLayoutResponse.json();
+  assert.equal(loadedLayout.matchedCount, 1);
+  assert.deepEqual(loadedLayout.missingNames, []);
+  const loadedPlayer = loadedLayout.room.players.find((player) => player.id === participant.playerId);
+  assert.equal(loadedPlayer.positionX, 21);
+  assert.equal(loadedPlayer.positionY, 64);
+  assert.equal(loadedPlayer.displaySize, 1.4);
+  assert.equal(loadedPlayer.nameVisible, false);
 
   viewer = await openSocket(`${socketUrl}/ws/view/${room.sessionId}/${room.overlayToken}/${participant.playerId}`);
   publisher = await openSocket(`${socketUrl}/ws/publish/${room.sessionId}/${room.joinToken}/${participant.playerId}`, guestCookie);

@@ -16,6 +16,7 @@ let selectedPlacementId = null;
 let placementSnapEnabled = localStorage.getItem("pngcalls.placementSnap") !== "false";
 let placementExpanded = false;
 let placementEditorCleanup = null;
+let savedLayouts = [];
 
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
@@ -320,7 +321,7 @@ function toast(message) {
 }
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
-const tutorialRevision = "11";
+const tutorialRevision = "12";
 const tutorialOnboardingKey = "pngcalls.tutorialOnboardingComplete";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
@@ -353,6 +354,7 @@ function tutorialSteps() {
     ["[data-reset-player-link]", "Reset the invitation between streams without changing OBS. Current players disconnect, but their saved names, styling, and uploaded PNGs return when they join the new invitation from the same browser."],
     ["#copy-overlay", "Copy this private link into an OBS Browser Source. Speaking changes use the same direct live connection as this preview."],
     ["#edit-placement", "Open Arrange players to drag and resize avatars and names. Use the 1920 x 1080 editor for the exact OBS canvas, and select a PNGTuber for idle appearance, name visibility, and snapping controls."],
+    ["#layout-preset-name", "Save a named layout for this group. PNGCalls records the included player names and restores returning players by their stable identity, with their name as a fallback."],
     ["[data-view='players']", "The player room shows everyone who joined. Edit a player to change images, font, name background, accent, and profile-picture fallback."],
     ["[data-view='settings']", "Settings control the room and Discord Activity. The connector reconnects automatically, but works best when you keep its Discord Activity tab open."],
   ];
@@ -548,6 +550,30 @@ function hasCustomPlacement(players = []) {
   return players.some((player) => player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined);
 }
 
+function automaticLayoutPlayers(players = [], layout = "row") {
+  if (hasCustomPlacement(players) || !players.length) return players;
+  const count = players.length;
+  const rowSize = clamp(1.48 - Math.max(0, count - 1) * 0.17, 0.55, 1.48);
+  return players.map((player, index) => {
+    let x;
+    let y;
+    let size = rowSize;
+    if (layout === "stack") {
+      const columns = count > 5 ? 2 : 1;
+      const row = Math.floor(index / columns);
+      const rows = Math.ceil(count / columns);
+      x = columns === 1 ? 18 : 13 + (index % columns) * 20;
+      y = ((row + 1) / (rows + 1)) * 82 + 9;
+      size = clamp(0.98 - Math.max(0, rows - 2) * 0.11, 0.48, 0.98);
+    } else {
+      x = ((index + 1) / (count + 1)) * 92 + 4;
+      const across = count === 1 ? 0 : (index / (count - 1)) * 2 - 1;
+      y = layout === "arc" ? 58 + Math.abs(across) * 11 : 65;
+    }
+    return { ...player, positionX: x, positionY: y, displaySize: size, displayLayer: index };
+  });
+}
+
 function applyPlayerState(avatar, player, includePlacement = true) {
   avatar.dataset.speaking = player.speaking ? "true" : "false";
   avatar.classList.toggle("speaking", Boolean(player.speaking));
@@ -607,8 +633,10 @@ function syncDashboardLive(data) {
     } : null;
     Object.assign(current, incoming, draftPlacement || {});
   });
-  if (preview) preview.className = `preview ${session.background} ${session.layout} ${hasCustomPlacement(session.players) ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}`;
-  session.players.forEach((player) => {
+  const customArrangement = hasCustomPlacement(session.players);
+  const displayPlayers = automaticLayoutPlayers(session.players, session.layout);
+  if (preview) preview.className = `preview ${session.background} ${session.layout} ${customArrangement ? "custom-layout" : "automatic-layout"} ${placementEditing ? "placement-editing" : ""}`;
+  displayPlayers.forEach((player) => {
     const avatar = preview?.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`);
     if (avatar) applyPlayerState(avatar, player);
     document.querySelector(`.mic[data-id="${CSS.escape(player.id)}"]`)?.classList.toggle("talking", Boolean(player.speaking));
@@ -721,13 +749,15 @@ function bindPlacementEditor() {
       return;
     }
     const previewRect = preview.getBoundingClientRect();
+    const automaticPlayers = automaticLayoutPlayers(session.players, session.layout);
     session.players.forEach((player, index) => {
       if (player.positionX !== null && player.positionX !== undefined && player.positionY !== null && player.positionY !== undefined) return;
       const avatar = preview.querySelector(`.avatar[data-player-id="${CSS.escape(player.id)}"]`);
       const rect = avatar?.getBoundingClientRect();
-      player.positionX = rect ? clamp(((rect.left + rect.width / 2 - previewRect.left) / previewRect.width) * 100, 0, 100) : 50;
-      player.positionY = rect ? clamp(((rect.top + rect.height / 2 - previewRect.top) / previewRect.height) * 100, 0, 100) : 50;
-      player.displaySize = player.displaySize || 1;
+      const automaticPlayer = automaticPlayers[index];
+      player.positionX = automaticPlayer?.positionX ?? (rect ? clamp(((rect.left + rect.width / 2 - previewRect.left) / previewRect.width) * 100, 0, 100) : 50);
+      player.positionY = automaticPlayer?.positionY ?? (rect ? clamp(((rect.top + rect.height / 2 - previewRect.top) / previewRect.height) * 100, 0, 100) : 50);
+      player.displaySize = automaticPlayer?.displaySize || player.displaySize || 1;
       player.nameSize = player.nameSize || 1;
       player.nameOffsetX = player.nameOffsetX || 0;
       player.nameOffsetY = player.nameOffsetY || 0;
@@ -746,7 +776,7 @@ function bindPlacementEditor() {
     resetButton.disabled = true;
     try {
       await api(`/api/sessions/${session.id}/placements`, { method: "PUT", body: JSON.stringify({ reset: true }) });
-      session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0, nameVisible: true }));
+      session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0 }));
       placementEditing = false;
       placementExpanded = false;
       selectedPlacementId = null;
@@ -946,7 +976,7 @@ async function chooseAutomaticLayout(layout) {
   const secrets = { joinToken: session.joinToken, overlayToken: session.overlayToken };
   session = await api(`/api/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ layout }) });
   Object.assign(session, secrets);
-  session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0, nameSize: 1, nameOffsetX: 0, nameOffsetY: 0, nameVisible: true }));
+  session.players.forEach((player) => Object.assign(player, { positionX: null, positionY: null, displaySize: 1, displayLayer: 0 }));
   placementEditing = false;
   placementExpanded = false;
   selectedPlacementId = null;
@@ -965,6 +995,7 @@ function renderDashboard() {
   const joinUrl = `${origin}/join/${session.id}/${session.joinToken}`;
   const players = session.players || [];
   const customArrangement = hasCustomPlacement(players);
+  const displayPlayers = automaticLayoutPlayers(players, session.layout);
   app.innerHTML = `<div class="shell">
     <aside class="rail">
       ${brandMarkup()}
@@ -981,8 +1012,9 @@ function renderDashboard() {
         <section class="card">
           <div class="card-head"><div><h2>Live preview</h2><p class="subtle">This now follows the same live feed as OBS.</p></div><span id="live-count-badge" class="badge ${session.onlineCount ? "live" : ""}">${session.onlineCount ? `${session.onlineCount} ONLINE` : "PREVIEW"}</span></div>
           <div class="placement-toolbar"><button id="edit-placement" class="btn ${placementEditing ? "primary" : "ghost"}" type="button">${placementEditing ? "Done arranging" : "Arrange players"}</button>${placementEditing ? `<button id="expand-placement" class="btn ghost" type="button">Open 1920 × 1080 editor</button>` : ""}<button id="reset-placement" class="btn ghost" type="button" ${customArrangement ? "" : "hidden"}>Reset arrangement</button><span>${placementEditing ? "Drag players to move them. Select one and use the size controls." : "Positions are shared with the OBS browser source."}</span></div>
+          <div class="layout-presets"><div class="field"><label for="layout-preset-name">Save this setup</label><input id="layout-preset-name" class="input" maxlength="60" placeholder="For example: Friday stream" /></div><button id="save-layout-preset" class="btn ghost" type="button" ${players.length ? "" : "disabled"}>Save layout</button><div class="field"><label for="layout-preset-select">Load a setup</label><select id="layout-preset-select" class="input"><option value="">Choose a saved layout</option>${savedLayouts.map((preset) => `<option value="${preset.id}">${escapeHtml(preset.name)}${preset.playerNames?.length ? ` (${escapeHtml(preset.playerNames.join(", "))})` : ""}</option>`).join("")}</select></div><button id="load-layout-preset" class="btn primary" type="button" ${savedLayouts.length ? "" : "disabled"}>Load</button><button id="delete-layout-preset" class="btn ghost danger" type="button" ${savedLayouts.length ? "" : "disabled"}>Delete</button></div>
           ${placementEditing && players.length ? `<div class="placement-controls"><strong id="selected-placement-name">Arrange player</strong><div class="placement-control-row"><span>Avatar size</span><button id="placement-smaller" class="btn compact" type="button" aria-label="Make selected player smaller">Smaller</button><input id="placement-size" type="range" min="0.4" max="2.5" step="0.05" value="1" aria-label="Selected player size" /><output id="placement-size-output">100%</output><button id="placement-larger" class="btn compact" type="button" aria-label="Make selected player larger">Larger</button></div><div class="placement-control-row"><span>Name size</span><button id="name-smaller" class="btn compact" type="button" aria-label="Make selected name smaller">Smaller</button><input id="name-size" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="Selected name size" /><output id="name-size-output">100%</output><button id="name-larger" class="btn compact" type="button" aria-label="Make selected name larger">Larger</button></div><div class="placement-name-position"><label for="name-position">Name position</label><select id="name-position" class="input">${namePositionOptions()}</select></div><div id="idle-appearance-row" class="placement-name-position"><label for="idle-appearance">Idle appearance</label><select id="idle-appearance" class="input"><option value="faded">Transparent while idle</option><option value="solid">Fully visible while idle</option></select></div><label class="placement-snap"><input id="placement-snap" type="checkbox" ${placementSnapEnabled ? "checked" : ""} /><span>Snap to other players and the canvas center</span></label><p>Select a PNGTuber to edit its idle appearance. Choose a name position, then drag the label for fine adjustment.</p></div>` : ""}
-          <div id="live-preview" class="preview ${escapeHtml(session.background)} ${escapeHtml(session.layout)} ${customArrangement ? "custom-layout" : ""} ${placementEditing ? "placement-editing" : ""}">${placementEditing ? `<div id="snap-guide-x" class="snap-guide vertical" hidden></div><div id="snap-guide-y" class="snap-guide horizontal" hidden></div>` : ""}${players.length ? players.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
+          <div id="live-preview" class="preview ${escapeHtml(session.background)} ${escapeHtml(session.layout)} ${customArrangement ? "custom-layout" : "automatic-layout"} ${placementEditing ? "placement-editing" : ""}">${placementEditing ? `<div id="snap-guide-x" class="snap-guide vertical" hidden></div><div id="snap-guide-y" class="snap-guide horizontal" hidden></div>` : ""}${players.length ? displayPlayers.map(avatarMarkup).join("") : `<div class="empty">Share the player link to fill this room.</div>`}</div>
           <div class="game-strip"><span>Works with</span><strong>R.E.P.O.</strong><strong>PEAK</strong><strong>Meccha Chameleon</strong><strong>Any game</strong></div>
         </section>
         <div class="stack">
@@ -1050,6 +1082,46 @@ function renderDashboard() {
   document.querySelector("#copy-join-room-2").onclick = copyJoin;
   document.querySelector("#copy-overlay").onclick = () => navigator.clipboard.writeText(overlayUrl).then(() => toast("OBS link copied"));
   bindPlacementEditor();
+  const presetSelect = document.querySelector("#layout-preset-select");
+  const selectedPresetId = () => Number.parseInt(presetSelect?.value || "", 10);
+  document.querySelector("#save-layout-preset").onclick = async () => {
+    const nameInput = document.querySelector("#layout-preset-name");
+    const name = nameInput.value.trim();
+    if (!name) { nameInput.focus(); toast("Give this layout a name"); return; }
+    try {
+      await api(`/api/sessions/${session.id}/layouts`, { method: "POST", body: JSON.stringify({ name, playerIds: players.map((player) => player.id) }) });
+      savedLayouts = await api(`/api/sessions/${session.id}/layouts`);
+      renderDashboard();
+      toast(`Saved “${name}” with ${players.length} ${players.length === 1 ? "player" : "players"}`);
+    } catch (error) { toast(error.message); }
+  };
+  document.querySelector("#load-layout-preset").onclick = async () => {
+    const presetId = selectedPresetId();
+    if (!Number.isSafeInteger(presetId)) { presetSelect.focus(); toast("Choose a saved layout first"); return; }
+    try {
+      const secrets = { joinToken: session.joinToken, overlayToken: session.overlayToken };
+      const result = await api(`/api/sessions/${session.id}/layouts/${presetId}/load`, { method: "POST" });
+      session = { ...result.room, ...secrets };
+      placementEditing = false;
+      placementExpanded = false;
+      selectedPlacementId = null;
+      renderDashboard();
+      const waiting = result.missingNames?.length ? ` Waiting for: ${result.missingNames.join(", ")}.` : "";
+      toast(`Loaded layout for ${result.matchedCount} ${result.matchedCount === 1 ? "player" : "players"}.${waiting}`);
+    } catch (error) { toast(error.message); }
+  };
+  document.querySelector("#delete-layout-preset").onclick = async () => {
+    const presetId = selectedPresetId();
+    const preset = savedLayouts.find((entry) => entry.id === presetId);
+    if (!preset) { presetSelect.focus(); toast("Choose a saved layout first"); return; }
+    if (!confirm(`Delete the saved layout “${preset.name}”?`)) return;
+    try {
+      await api(`/api/sessions/${session.id}/layouts/${presetId}`, { method: "DELETE" });
+      savedLayouts = await api(`/api/sessions/${session.id}/layouts`);
+      renderDashboard();
+      toast("Saved layout deleted");
+    } catch (error) { toast(error.message); }
+  };
   connectDashboardWebcams();
   document.querySelectorAll("[data-reset-player-link]").forEach((button) => {
     button.onclick = async () => {
@@ -1192,7 +1264,10 @@ function showPlayerModal(player = null) {
 async function loadDashboard() {
   try {
     session = await api(`/api/sessions/${sessionId}`);
-    discordConnection = await api("/api/discord/status").catch(() => ({ configured: false, connected: null }));
+    [discordConnection, savedLayouts] = await Promise.all([
+      api("/api/discord/status").catch(() => ({ configured: false, connected: null })),
+      api(`/api/sessions/${sessionId}/layouts`).catch(() => []),
+    ]);
     renderDashboard();
     startDashboardLive();
   } catch {
@@ -1799,16 +1874,18 @@ async function runOverlay() {
   const render = (data) => {
     document.documentElement.style.background = "transparent";
     const nextStructure = playerSignature(data.players);
+    const customArrangement = hasCustomPlacement(data.players);
+    const displayPlayers = automaticLayoutPlayers(data.players, data.layout);
     let stage = app.querySelector(".overlay-stage");
     if (!stage || nextStructure !== playerStructure) {
       app.querySelectorAll("img[data-webcam-src]").forEach((image) => { image.webcamSocket?.close(); if (image.dataset.webcamBlob) URL.revokeObjectURL(image.dataset.webcamBlob); });
-      app.innerHTML = `<main class="overlay-stage ${escapeHtml(data.layout)} ${hasCustomPlacement(data.players) ? "custom-layout" : ""}">${data.players.map(avatarMarkup).join("")}</main>`;
+      app.innerHTML = `<main class="overlay-stage ${escapeHtml(data.layout)} ${customArrangement ? "custom-layout" : "automatic-layout"}">${displayPlayers.map(avatarMarkup).join("")}</main>`;
       playerStructure = nextStructure;
       stage = app.querySelector(".overlay-stage");
     }
-    stage.className = `overlay-stage ${data.layout} ${hasCustomPlacement(data.players) ? "custom-layout" : ""}`;
+    stage.className = `overlay-stage ${data.layout} ${customArrangement ? "custom-layout" : "automatic-layout"}`;
     [...stage.querySelectorAll(".avatar")].forEach((avatar, index) => {
-      const player = data.players[index];
+      const player = displayPlayers[index];
       applyPlayerState(avatar, player);
     });
     stage.querySelectorAll("img[data-webcam-src]").forEach((image) => connectWebcamStream(image, id, overlayToken, image.closest(".avatar").dataset.playerId));
