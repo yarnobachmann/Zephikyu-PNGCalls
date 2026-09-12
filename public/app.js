@@ -160,23 +160,32 @@ function freshGifUrl(source, blob = null) {
   return url.href;
 }
 
-function stopTalkingGif(avatar) {
-  if (!avatar) return;
-  clearTimeout(avatar.gifRestartTimer);
-  avatar.gifRestartTimer = null;
-  avatar.gifPlaybackArmed = false;
-  avatar.gifPlaybackGeneration = (avatar.gifPlaybackGeneration || 0) + 1;
+function gifLayerState(avatar, layer) {
+  avatar.gifPlayback ||= {};
+  avatar.gifPlayback[layer] ||= { armed: false, generation: 0, source: "", timer: null };
+  return avatar.gifPlayback[layer];
 }
 
-function restartTalkingGif(avatar, source) {
-  if (!avatar || !/\.gif(?:$|[?#])/i.test(source || "")) return stopTalkingGif(avatar);
-  const image = avatar.querySelector(".avatar-img-talking");
-  if (!image) return;
-  clearTimeout(avatar.gifRestartTimer);
-  avatar.gifPlaybackArmed = true;
-  avatar.gifPlaybackSource = source;
-  const generation = (avatar.gifPlaybackGeneration || 0) + 1;
-  avatar.gifPlaybackGeneration = generation;
+function stopAnimatedGif(avatar, layer) {
+  if (!avatar) return;
+  const state = gifLayerState(avatar, layer);
+  clearTimeout(state.timer);
+  state.timer = null;
+  state.armed = false;
+  state.generation += 1;
+}
+
+function restartAnimatedGif(avatar, source, layer) {
+  if (!avatar || !/\.gif(?:$|[?#])/i.test(source || "")) return stopAnimatedGif(avatar, layer);
+  const state = gifLayerState(avatar, layer);
+  const selector = layer === "idle" ? ".avatar-img-idle" : ".avatar-img-talking";
+  const image = avatar.querySelector(selector);
+  if (!image) return stopAnimatedGif(avatar, layer);
+  clearTimeout(state.timer);
+  state.armed = true;
+  state.source = source;
+  const generation = state.generation + 1;
+  state.generation = generation;
   const resource = gifPlaybackResources.get(source);
   const previousBlobUrl = image.dataset.pngcallsBlobUrl || "";
   const restarted = image.cloneNode(true);
@@ -184,15 +193,30 @@ function restartTalkingGif(avatar, source) {
   delete restarted.dataset.pngcallsBlobUrl;
   const nextUrl = freshGifUrl(source, resource?.blob);
   if (resource?.blob) restarted.dataset.pngcallsBlobUrl = nextUrl;
-  const releasePrevious = () => { if (previousBlobUrl) URL.revokeObjectURL(previousBlobUrl); };
-  restarted.addEventListener("load", releasePrevious, { once: true });
-  restarted.addEventListener("error", releasePrevious, { once: true });
+  const abandonNewImage = () => { if (restarted.dataset.pngcallsBlobUrl) URL.revokeObjectURL(restarted.dataset.pngcallsBlobUrl); };
+  restarted.addEventListener("load", async () => {
+    const currentState = gifLayerState(avatar, layer);
+    const stillActive = avatar.isConnected && currentState.armed && currentState.generation === generation && currentState.source === source;
+    if (!stillActive || !image.isConnected) return abandonNewImage();
+    image.replaceWith(restarted);
+    if (previousBlobUrl) URL.revokeObjectURL(previousBlobUrl);
+    const { durationMs } = await loadGifPlayback(source);
+    if (!avatar.isConnected || !currentState.armed || currentState.generation !== generation || currentState.source !== source) return;
+    currentState.timer = setTimeout(() => restartAnimatedGif(avatar, source, layer), clamp(durationMs, 250, 60_000));
+  }, { once: true });
+  restarted.addEventListener("error", abandonNewImage, { once: true });
   restarted.src = nextUrl;
-  image.replaceWith(restarted);
-  loadGifPlayback(source).then(({ durationMs }) => {
-    if (!avatar.isConnected || !avatar.classList.contains("speaking") || avatar.gifPlaybackGeneration !== generation || avatar.gifPlaybackSource !== source) return;
-    avatar.gifRestartTimer = setTimeout(() => restartTalkingGif(avatar, source), clamp(durationMs + 40, 250, 60_000));
-  });
+  loadGifPlayback(source);
+}
+
+function syncAnimatedGifPlayback(avatar, idleSource, talkingSource, speaking) {
+  if (!avatar) return;
+  const activeLayer = speaking ? "talking" : "idle";
+  const inactiveLayer = speaking ? "idle" : "talking";
+  const activeSource = speaking ? talkingSource : idleSource;
+  const state = gifLayerState(avatar, activeLayer);
+  stopAnimatedGif(avatar, inactiveLayer);
+  if (!state.armed || state.source !== activeSource) restartAnimatedGif(avatar, activeSource, activeLayer);
 }
 
 function positionAvatarName(avatar, player) {
@@ -508,7 +532,6 @@ function hasCustomPlacement(players = []) {
 }
 
 function applyPlayerState(avatar, player, includePlacement = true) {
-  const wasSpeaking = avatar.dataset.speaking === "true";
   avatar.dataset.speaking = player.speaking ? "true" : "false";
   avatar.classList.toggle("speaking", Boolean(player.speaking));
   avatar.classList.toggle("idle-opaque", player.idleTransparent === false);
@@ -540,8 +563,7 @@ function applyPlayerState(avatar, player, includePlacement = true) {
     const talkingImage = avatar.querySelector(".avatar-img-talking");
     if (idleImage && idleSource && idleImage.dataset.source !== idleSource) { idleImage.dataset.source = idleSource; idleImage.src = idleSource; }
     if (talkingImage && talkingSource && talkingImage.dataset.source !== talkingSource) { talkingImage.dataset.source = talkingSource; talkingImage.src = talkingSource; }
-    if (player.speaking && (!wasSpeaking || !avatar.gifPlaybackArmed || avatar.gifPlaybackSource !== talkingSource)) restartTalkingGif(avatar, talkingSource);
-    if (!player.speaking && (wasSpeaking || avatar.gifPlaybackArmed)) stopTalkingGif(avatar);
+    syncAnimatedGifPlayback(avatar, idleSource, talkingSource, Boolean(player.speaking));
   }
 }
 
@@ -1663,8 +1685,7 @@ async function startMic(id, joinToken, identity, storageKey) {
     const guestAvatar = document.querySelector("#guest-live-preview .avatar");
     guestAvatar?.classList.toggle("speaking", speaking);
     if (guestAvatar) guestAvatar.dataset.speaking = speaking ? "true" : "false";
-    if (changed && speaking) restartTalkingGif(guestAvatar, identity.talkingImage || identity.idleImage || "");
-    if (changed && !speaking) stopTalkingGif(guestAvatar);
+    if (changed) syncAnimatedGifPlayback(guestAvatar, identity.idleImage || "", identity.talkingImage || identity.idleImage || "", speaking);
     document.querySelector("#meter-bar").style.transform = `scaleX(${Math.min(1, level * 12)})`;
     document.querySelector("#mic-label").textContent = speaking ? "Speaking" : "Listening for your voice";
     if (changed) sendSpeakingState();
