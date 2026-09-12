@@ -321,6 +321,7 @@ function toast(message) {
 
 const tutorialImage = "/assets/tutorial-zeph.gif";
 const tutorialRevision = "11";
+const tutorialOnboardingKey = "pngcalls.tutorialOnboardingComplete";
 function tutorialSteps() {
   if (isJoin && document.querySelector("#join-form")) return [
     ["input[name='name']", "Enter your display name. PNGCalls remembers it and the other setup choices on this device."],
@@ -404,14 +405,22 @@ function mountTutorialHelper() {
     return;
   }
   helper.querySelector("button").onclick = startTutorial;
-  if (localStorage.getItem("pngcalls.tutorialRevision") === tutorialRevision) return;
+  const previousTutorial = localStorage.getItem("pngcalls.tutorialRevision");
+  if (localStorage.getItem(tutorialOnboardingKey) === "true" || previousTutorial) {
+    if (previousTutorial && localStorage.getItem(tutorialOnboardingKey) !== "true") localStorage.setItem(tutorialOnboardingKey, "true");
+    return;
+  }
   const prompt = document.createElement("div");
   prompt.className = "tutorial-prompt";
   const authPage = Boolean(document.querySelector("#auth-form"));
   prompt.innerHTML = `<section class="tutorial-prompt-card" role="dialog" aria-modal="true" aria-labelledby="tutorial-title"><img src="${tutorialImage}" alt="" /><div><div class="eyebrow">${authPage ? "Host territory" : "Welcome to PNGCalls"}</div><h2 id="tutorial-title">${authPage ? "Wrong door." : "Is this your first time here?"}</h2><p>${authPage ? "You are not allowed here you secondhand scoobydoo shoe." : "Zeph can show you where everything is."}</p><div class="actions"><button class="btn primary tutorial-yes" type="button">${authPage ? "I am the host" : "Yes, show me"}</button><button class="btn ghost tutorial-no" type="button">${authPage ? "Back away" : "No, thanks"}</button></div></div></section>`;
   document.body.append(prompt);
-  prompt.querySelector(".tutorial-yes").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialRevision", tutorialRevision); startTutorial(); };
-  prompt.querySelector(".tutorial-no").onclick = () => { prompt.remove(); localStorage.setItem("pngcalls.tutorialRevision", tutorialRevision); };
+  const rememberOnboarding = () => {
+    localStorage.setItem(tutorialOnboardingKey, "true");
+    localStorage.setItem("pngcalls.tutorialRevision", tutorialRevision);
+  };
+  prompt.querySelector(".tutorial-yes").onclick = () => { prompt.remove(); rememberOnboarding(); startTutorial(); };
+  prompt.querySelector(".tutorial-no").onclick = () => { prompt.remove(); rememberOnboarding(); };
   prompt.querySelector(".tutorial-yes").focus();
 }
 
@@ -657,7 +666,7 @@ function openPlacementResolutionEditor() {
   placementExpanded = true;
   const editor = document.createElement("section");
   editor.className = "resolution-editor";
-  editor.innerHTML = `<div class="resolution-editor-panel"><header class="resolution-editor-header"><div><div class="eyebrow">OBS canvas editor</div><h2>1920 × 1080 arrangement</h2><p>Every position and size maps directly to the browser source.</p></div><div class="actions"><span id="resolution-editor-scale" class="badge">Fitting canvas</span><button id="close-resolution-editor" class="btn ghost" type="button">Return to dashboard</button><button id="finish-resolution-editor" class="btn primary" type="button">Done arranging</button></div></header><div class="resolution-editor-controls"></div><div class="resolution-editor-viewport"><div class="resolution-editor-stage"></div></div></div>`;
+  editor.innerHTML = `<div class="resolution-editor-panel"><header class="resolution-editor-header"><div><div class="eyebrow">OBS canvas editor</div><h2>1920 × 1080 arrangement</h2><p>Every position and size maps directly to the browser source.</p></div><div class="actions"><span id="resolution-editor-scale" class="badge">Fitting canvas</span><button id="toggle-resolution-controls" class="btn ghost" type="button">Hide controls</button><button id="close-resolution-editor" class="btn ghost" type="button">Return to dashboard</button><button id="finish-resolution-editor" class="btn primary" type="button">Done arranging</button></div></header><div class="resolution-editor-viewport"><div class="resolution-editor-controls"></div><div class="resolution-editor-stage"></div></div></div>`;
   document.body.append(editor);
   editor.querySelector(".resolution-editor-controls").append(controls);
   editor.querySelector(".resolution-editor-stage").append(preview);
@@ -681,6 +690,10 @@ function openPlacementResolutionEditor() {
   };
   editor.querySelector("#close-resolution-editor").onclick = () => closeEditor(false);
   editor.querySelector("#finish-resolution-editor").onclick = () => closeEditor(true);
+  editor.querySelector("#toggle-resolution-controls").onclick = (event) => {
+    const hidden = editor.classList.toggle("controls-hidden");
+    event.currentTarget.textContent = hidden ? "Show controls" : "Hide controls";
+  };
   const handleKey = (event) => { if (event.key === "Escape") closeEditor(false); };
   placementEditorCleanup = () => {
     window.removeEventListener("resize", fitCanvas);
